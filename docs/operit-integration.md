@@ -1,5 +1,11 @@
 # Operit 集成 — DSH 大脑 + Operit 触手
 
+> **进度 (v0.1.10, 2026-08-14)**: 路线 A 的 M1+M2 已代码完成并 Node 侧验证
+> 通过——`operit/` 把引擎注册为 Operit AI provider，DeepSeek 走 OkHttp 流式，
+> 假 provider 回放（todo 工具调度）+ 真 API 冒烟双过。产物
+> `dshmini.toolpkg.zip`（~200KB）挂在 release 上，手机上用 Operit 包安装
+> 即可，无需重编 APK。剩：设备侧安装联调 + 工具名核对。
+
 > 目标：把 dsh-mini 的便携引擎塞进 Operit，让 DSH agent 直接使用 Operit
 > 已有的能力（终端、UI 树、Android 工具、网络、本地模型）作为"手"，
 > 我们**不重写任何操作手机的工具**。引擎一行不改，只写宿主胶水。
