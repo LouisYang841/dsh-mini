@@ -47,5 +47,18 @@
     "@deepseek-ai/dsh-compaction-basic": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-title": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-title-first-prompt-llm": "0.1.0-rc.6"
-  }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "deepseek",
+    "termux",
+    "android",
+    "coding-agent",
+    "ai-agent",
+    "cli",
+    "tui",
+    "portable",
+    "pi-tui",
+    "llm"
+  ]
 }

@@ -71,6 +71,15 @@ dsh-mini
 
 ---
 
+## 相关项目 / Related
+
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 本项目的引擎来源（官方 188 包全家桶 → 我们砍到 13 包内核）
+- [pi](https://github.com/earendil-works/pi) — 壳与 provider 生态来源（pi-tui / pi-ai）
+- [@openguardrails/dsh-tui](https://github.com/openguardrails/dsh-tui) — 默认全屏 TUI（同为 pi-tui 系，MIT）
+- [dsh-cc-tui](https://github.com/ccch1mneyyy/dsh-TUI) — 另一社区 TUI（BSD-3，仅作参考未打包）
+
+---
+
 以下为英文文档（架构细节、开发指南）。
 
 This directory is the spike that answers one question: **can the DeepSeek
