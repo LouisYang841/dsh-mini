@@ -186,7 +186,7 @@ node cli/cli.mjs [model]
   session firehose; ANSI status bar with live token usage.
 
 Commands:
-```
+```sh
 cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 ./run.sh                  # engine conformance (Node + QuickJS, diff vs baseline)
 ./build.sh                # portable engine bundle only

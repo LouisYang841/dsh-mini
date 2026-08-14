@@ -330,7 +330,7 @@ const boot = async (ctx) => {
 		if (key === "defaultMode" && MODE_OVERRIDE !== undefined) return "cli";
 		if (key === "defaultProvider" && PROVIDER_OVERRIDE !== undefined) return "cli";
 		if (key === "defaultModel" && ARGS[0] !== undefined) return "cli";
-		if (key === "renderer" && (process.env.DSH_PLAIN !== undefined || process.env.DSH_TUI !== undefined)) return "env";
+		if (key === "renderer" && (process.env.DSH_PLAIN || process.env.DSH_TUI === "basic")) return "env";
 		if (process.env[CONFIG_ENV_KEYS[key]] !== undefined) return "env";
 		if (key in currentConfig.raw.project) return "project";
 		if (key in currentConfig.raw.user) return "user";
@@ -413,8 +413,9 @@ const boot = async (ctx) => {
 	};
 	const parseModeArgs = (raw) => {
 		const parts = raw.trim().split(/\s+/).filter(Boolean);
-		const mode = parts[0];
-		const flags = parts.slice(1);
+		const mode = parts[0]?.startsWith("--") ? undefined : parts[0];
+		const flags = mode === undefined ? parts : parts.slice(1);
+		if (mode === undefined && flags.length > 0) return { error: `/mode requires a mode id (use /mode <${MODES.join("|")}> [--global])` };
 		if (flags.some((flag) => flag !== "--global")) return { error: `unknown mode argument "${flags.find((flag) => flag !== "--global")}" (use --global)` };
 		return { mode, global: flags.includes("--global") };
 	};
@@ -748,7 +749,7 @@ const boot = async (ctx) => {
 				process.exit(1);
 			}
 			currentProvider = answer;
-			currentModel = CONFIG.defaultModel ?? PROVIDER_DEFAULTS[answer].model;
+			currentModel = ARGS[0] ?? CONFIG.defaultModel ?? PROVIDER_DEFAULTS[answer].model;
 			const key = (await askUser(`${PROVIDER_DEFAULTS[answer].keyEnv}: `)).trim();
 			if (!key) {
 				console.error("empty API key; set the env var and restart");

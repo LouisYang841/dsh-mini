@@ -58,6 +58,15 @@ test('loadConfig reports invalid and unknown config fields', () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+test('saveUserConfig rejects invalid patches before creating the file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-mini-config-'))
+  const path = join(dir, 'settings.json')
+  assert.throws(() => saveUserConfig({ renderer: 'xterm' }, { path }), /renderer must be one of/)
+  assert.throws(() => saveUserConfig({ unknownField: true }, { path }), /unknown field/)
+  assert.equal(existsSync(path), false)
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('saveUserConfig persists a patch with mode 0600 and preserves existing fields', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-mini-config-'))
   const path = join(dir, 'settings.json')

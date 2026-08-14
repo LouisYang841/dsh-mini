@@ -14,7 +14,7 @@
  * and `/config` restarts or re-reads settings when a value actually changes.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -120,10 +120,15 @@ export function expandPath(path) {
 export function saveUserConfig(patch, options = {}) {
   const path = options.path ?? USER_CONFIG_PATH
   const existing = normalize(readJson(path), path)
-  const next = { ...existing, ...patch }
+  // normalize() also validates the patch before anything touches disk.
+  const next = normalize({ ...existing, ...patch }, path)
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  writeFileSync(path, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
-  chmodSync(path, 0o600)
+  // Same-directory temp + rename keeps an existing settings file intact if
+  // the write or chmod fails halfway through.
+  const tmp = `${path}.tmp`
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+  chmodSync(tmp, 0o600)
+  renameSync(tmp, path)
   return { path, config: next }
 }
 
