@@ -266,6 +266,18 @@ byte-for-byte. Rules:
   status bar; persistence/skills/commands/ask-user all wired); titles
   auto-mount with DSH_CC_TUI because its session list expects them.
 
+## Release artifact self-containment
+
+- dsh-llm reads its own version via `createRequire(import.meta.url)
+  ("../package.json")` — the CLI bundle must alias `node:module` to the shim
+  (like the portable build), or the standalone artifact crashes with
+  MODULE_NOT_FOUND on hosts with no package.json beside it. Caught on the
+  phone; fixed in cli-build.sh.
+- Phone deploy recipe (verified): scp the artifact → pipe `\n<key>\n<prompt>`
+  into first run for the interactive setup (key never transits to the
+  controlling machine if you run the extraction on-device) → keys persist to
+  `~/.dsh-mini/env`, sessions to `~/.dsh-mini/sessions`.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is

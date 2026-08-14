@@ -18,6 +18,7 @@ if [ -f vendor/node_modules/@openguardrails/dsh-tui/lib/index.js ]; then
 fi
 $ESBUILD cli/cli.js \
   $ALIAS_FLAG \
+  --alias:node:module=./shims/module.js \
   --bundle \
   --format=esm \
   --platform=node \

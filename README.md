@@ -83,7 +83,9 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 
 ## Termux (Android)
 
-The release artifact is fully self-contained — no npm install needed:
+The release artifact is fully self-contained — no npm install needed (also
+verified live on a OnePlus 15: setup → bash tool driving the phone's real
+filesystem → session persisted, all on-device):
 
 ```sh
 pkg install nodejs            # Node >= 22.15 (zstd is bundled in node:zlib)
