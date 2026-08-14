@@ -41,4 +41,4 @@ esac
 echo ""
 echo "installed: $BASE/bin/dsh-mini"
 echo "run:       dsh-mini            (new shell, or: export PATH=\"$BASE/bin:\$PATH\")"
-echo "usage:     dsh-mini [model] [--provider <id>] [--resume <id>] [--sessions]"
+echo "usage:     dsh-mini [model] [--provider <id>] [--mode <id>] [--resume <id>] [--sessions]"

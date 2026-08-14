@@ -65,6 +65,8 @@ dsh-mini
 
 首次运行无密钥会交互询问 provider 并持久化（`~/.dsh-mini/env`）。DeepSeek 默认；`/provider` 切换，`/model` 换型号，`--resume`/`--sessions` 回访会话。
 
+新会话默认 **minimal 模式**：system prompt 固定为官方 Minimal 的完整 persona，模型只看到 `bash` + `read`。用 `--mode standard`、`DSH_MODE=standard` 或会话内 `/mode standard` 切到完整工具目录；模式作为 durable session event 保存，resume 时自动恢复。
+
 ## 许可证
 
 自身代码 MIT；全部拼装组件的归属声明见 `THIRD_PARTY_LICENSES.md`（随 release 分发）。
@@ -135,15 +137,19 @@ node cli/cli.mjs [model]
 - Persistence: the REAL DSH JSONL backend (`dsh-session-persistence-jsonl`,
   zstd, per-cwd layout); sessions survive restarts, `--resume <id>` resumes,
   `--sessions` lists. Verified cross-process memory (secret-code test).
-- REPL: `/clear`, `/model <id>`, `/sessions`, `/exit`; live event rendering
-  from the session firehose; ANSI status bar with live token usage.
+- Modes: `minimal` is the default for new sessions (exact Minimal persona +
+  `bash`/`read` only); `standard` keeps the full dsh-mini catalog. Select via
+  `--mode <id>`, `DSH_MODE`, or `/mode <id>`; the active mode is recorded as
+  a durable session event and restored on resume.
+- REPL: `/clear`, `/model <id>`, `/mode [id]`, `/sessions`, `/exit`; live event
+  rendering from the session firehose; ANSI status bar with live token usage.
 
 Commands:
 ```
 cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 ./run.sh                  # engine conformance (Node + QuickJS, diff vs baseline)
 ./build.sh                # portable engine bundle only
-node cli/cli.mjs [model] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
+node cli/cli.mjs [model] [--mode <id>] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
 ```
 
 **Providers.** DeepSeek is the default (`deepseek-official` route via DSH's own
@@ -220,12 +226,11 @@ artifacts are fully self-contained. Pick the mode that fits:
 
 ## CI
 
-`.github/workflows/conformance.yml` runs on every push: npm install → portable
-bundle build → conformance gate (byte-identical vs `baseline.node.json`) →
-CLI build.
+`.github/workflows/conformance.yml` runs on every push: npm install → unit
+tests → portable bundle build → conformance gate (byte-identical vs
+`baseline.node.json`) → CLI build.
 
 ## Roadmap
 
 Feature audit with sourcing decisions (pi-native → DSH minimal → self-written
-glue), priorities, and a deliberate skip list: `ROADMAP.md`. Next up: the
-pi-ai multi-provider adapter (seam ①), then pi-tui Markdown/autocomplete.
+glue), priorities, and a deliberate skip list: `ROADMAP.md`.

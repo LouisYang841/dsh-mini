@@ -8,7 +8,8 @@
   "scripts": {
     "build": "bash build.sh",
     "build:cli": "bash cli/cli-build.sh",
-    "conformance": "bash run.sh"
+    "conformance": "bash run.sh",
+    "test": "node --test"
   },
   "dependencies": {},
   "devDependencies": {

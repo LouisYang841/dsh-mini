@@ -168,6 +168,13 @@ byte-for-byte. Rules:
   declared — `const handleLine` referenced from an onSubmit callback throws
   "Cannot access before initialization" on the FIRST keystroke. Declare
   shared handlers as hoisted `function` declarations.
+- **Provided services are fiber-state sensitive**: `ctx.provide("x", value)`
+  inside the long-lived boot body is invisible to a consumer mounted later in
+  the SAME body, because `ctx.get("x")` is strict and ignores providers whose
+  fiber is still loading. Mount the provider as its own tiny plugin and `await`
+  its fiber BEFORE mounting the consumer. dsh-mini does exactly that for
+  `tuiResumeHost`; without it `@openguardrails/dsh-tui` falls back to
+  "Session is resumable, but this host cannot hand it off in place."
 - pi-tui vendors cleanly: `@earendil-works/pi-tui` + `get-east-asian-width`
   + `marked` tarballs under `vendor/node_modules`, entry aliased in the
   build (`--alias:@earendil-works/pi-tui=./vendor/.../dist/index.js`); CI
@@ -271,6 +278,24 @@ byte-for-byte. Rules:
   argument missed the `startsWith("/provider ")` guard (trailing space) and
   went to the agent as a prompt — the agent then explored the repo with bash.
   Guard bare forms (`trimmed === "/x"`) BEFORE the prefixed forms.
+- **Every intercepted slash command must return**: the `/exit` branch called
+  `gracefulExit()` and fell through to `agent.followup`, sending the literal
+  `/exit` text to the model. A command branch that handles a line must end
+  with `return`.
+- **`dsh-commands` invocation carries `rawInput`, not `args`**: the community
+  TUI executes registered commands through `ctx.commands.execute`, whose
+  invocation object has `rawInput` (the text after `/name`). Reading
+  `invocation.args` makes every argument look empty — `/mode standard`
+  silently behaved like `/mode`.
+- **Process-restart commands must preserve launch args and flush first**:
+  `/new` and `/mode` in the cc-tui re-exec `process.argv[1]`; strip
+  `--resume*`/`--mode*`/`--sessions`, keep positional model and `--provider`,
+  pass the target mode through `DSH_MODE`, and `await ctx.sessions.flush(...)`
+  before spawning. The raw `ctx.emit("session/flush", ...)` is not awaitable
+  and can lose the outgoing session's tail.
+- **Session switches in plain/basic mode must flush the outgoing agent**
+  (`await ctx.sessions.flush(old.session)`) before replacing it, otherwise an
+  immediate `/exit` can lose the just-left session.
 - **cc-tui piped-input timing**: input piped at pty creation is consumed
   before the TUI's raw-mode StdinBuffer mounts; delay the send a few seconds
   (`(sleep 6; printf '...\r')`) and the full cycle works — model wait
