@@ -7,7 +7,7 @@ trace.*.json
 # runtimes / vendored tools
 quickjs-*/
 qjs.tar.xz
-node_modules/
+node_modules
 
 # test output
 hello*.py
