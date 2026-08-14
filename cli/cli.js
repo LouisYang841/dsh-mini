@@ -315,8 +315,30 @@ const boot = async (ctx) => {
 				console.error("[resume] FAILED:", err?.stack ?? String(err));
 				process.exit(1);
 			}
+		} else if (tuiSessionId === "main" && !process.env.DSH_FRESH) {
+			// The "main" session id is fixed across TUI runs: resume the
+			// persisted log instead of minting a fresh session with the same
+			// id. A fresh agent would carry a new header (createdAt, seed),
+			// which trips session-query's source-header consistency check on
+			// every /resume scan. Resuming also keeps context continuity.
+			try {
+				const published = await Promise.race([
+					ctx.agentLoop.resume(ctx, {
+						resumeSessionId: "main",
+						agentOptions: { provider: currentProvider, model: currentModel },
+					}),
+					new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
+				]);
+				agent = published.agent;
+			} catch (err) {
+				// No persisted "main" yet (or it is unreadable): first run.
+				if (!/not found/i.test(String(err))) {
+					console.error("[resume-main] FAILED, starting fresh:", err?.stack ?? String(err));
+				}
+				agent = makeAgent(currentModel, currentProvider, "main");
+			}
 		} else {
-			agent = makeAgent(currentModel, currentProvider, "main");
+			agent = makeAgent(currentModel, currentProvider, tuiSessionId);
 		}
 		return;
 	}
