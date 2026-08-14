@@ -40,6 +40,7 @@ import * as storageDomainNs from "@deepseek-ai/dsh-storage-domain";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
 import { createTuiHost } from "./tui-renderer.js";
+import { renderBanner } from "./banner.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
@@ -131,6 +132,7 @@ function persistCredential(provider, key) {
 const AGENTS_MD_CAP = 30 * 1024; // keep injected instructions bounded
 
 const boot = async (ctx) => {
+	if (TTY && !process.env.DSH_NO_BANNER) process.stdout.write(renderBanner());
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
 	// /new: available in every renderer. In the community TUI it restarts the
 	// process with a fresh session id; plain mode handles it in handleLine.
