@@ -60,7 +60,8 @@ export function createTuiHost({ onLine, onInterrupt }) {
 				onInterrupt();
 			} else {
 				tui.stop();
-				process.exit(0);
+				// persistence flush grace (the backend batches writes)
+				setTimeout(() => process.exit(0), 500);
 			}
 		}
 	});

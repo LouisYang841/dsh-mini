@@ -278,6 +278,26 @@ byte-for-byte. Rules:
   controlling machine if you run the extraction on-device) → keys persist to
   `~/.dsh-mini/env`, sessions to `~/.dsh-mini/sessions`.
 
+## Android/Termux persistence (phone-verified)
+
+- **Android SELinux denies hard links** inside app-private storage
+  (`link()` → EACCES). dsh-session-persistence-jsonl publishes via
+  temp-write + fsync + `link(tmp, final)` + dir-fsync and SWALLOWS the
+  error — symptom: per-session directories appear but stay empty. Fix:
+  `shims/fs-promises.js` (aliased in the CLI build) falls back to
+  `rename()` for EACCES/EPERM/EXDEV/ENOTSUP. Reference: pi's JSONL repo
+  uses rename-based atomic publish on every platform — that is why pi
+  persists fine on Termux.
+- **`process.exit()` kills the 200ms write batch**: quick `/stats`+`/exit`
+  runs persisted nothing. Exit paths must emit `session/flush` and wait
+  ~500ms (gracefulExit in cli.js; same in tui-renderer).
+- Debugging on the phone: upload a small probe bundle (remember the
+  node:module + fs/promises aliases), attach `.then(ok, err)` handlers to
+  EVERY fiber — a parked boot fiber exits 0 with zero output.
+- Termux specifics: `/tmp` is not writable (upload to `~/`); session files
+  are `session.jsonl.zstd` inside per-session directories
+  (`root/--cwd--/<id>/`); zstd works on Node 25.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is

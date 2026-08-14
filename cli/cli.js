@@ -198,7 +198,7 @@ const boot = async (ctx) => {
 		plainRl.on("close", () => {
 			if (!plainInputActive) return;
 			stdinClosed = true;
-			if (!busy) process.exit(0);
+			if (!busy) gracefulExit();
 		});
 	}
 	const askUser = (question) => {
@@ -309,11 +309,22 @@ const boot = async (ctx) => {
 
 	// ---- shared input handling ----
 
+	// Exit with a persistence flush grace: the JSONL backend writes in
+	// 200ms batches; an immediate process.exit() kills the pending write.
+	const gracefulExit = () => {
+		try {
+			if (agent) ctx.emit("session/flush", agent.session);
+		} catch {
+			// flush is best-effort on the way out
+		}
+		setTimeout(() => process.exit(0), 500);
+	};
+
 	async function handleLine(line) {
 		const trimmed = line.trim();
 		try {
 			if (/^(\/)?(exit|quit|e|q)(\(\))?$/i.test(trimmed)) {
-				process.exit(0);
+				gracefulExit();
 			}
 			if (trimmed === "") return;
 			if (trimmed === "/provider") {
@@ -408,7 +419,7 @@ const boot = async (ctx) => {
 			busy = false;
 			ui?.setBusy(false);
 			ui?.focus();
-			if (stdinClosed) process.exit(0);
+			if (stdinClosed) gracefulExit();
 		}
 	};
 

@@ -19,6 +19,7 @@ fi
 $ESBUILD cli/cli.js \
   $ALIAS_FLAG \
   --alias:node:module=./shims/module.js \
+  --alias:node:fs/promises=./shims/fs-promises.js \
   --bundle \
   --format=esm \
   --platform=node \
