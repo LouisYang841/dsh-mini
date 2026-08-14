@@ -18,6 +18,7 @@ import { createTuiHost } from "./tui-renderer.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
+import { zstdCompress } from "node:zlib";
 import { homedir } from "node:os";
 
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -27,6 +28,10 @@ if (!API_KEY) {
 }
 const CWD = process.cwd();
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
+// node:zlib zstd is built into Node >= 22.15 (no system lib); degrade to
+// uncompressed JSONL on older runtimes (e.g. some Termux images).
+const HAS_ZSTD = typeof zstdCompress === "function";
+if (!HAS_ZSTD) console.error("[warn] node:zlib zstd unavailable (Node < 22.15): sessions will be stored uncompressed");
 // pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
 const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
 
@@ -283,7 +288,7 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("fs", NodeFs, { cwd: CWD });
-mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR });
+mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);
 mount("tool-todo", todoTools);
 mount("agentLoop", AgentLoop, { maxParallelToolCalls: 4 });

@@ -72,6 +72,31 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 `ARCHITECTURE.md`. Pitfalls and host-integration checklist:
 `skills/dsh-core-embedding/SKILL.md`.
 
+## Termux (Android)
+
+The release artifact is fully self-contained — no npm install needed:
+
+```sh
+pkg install nodejs            # Node >= 22.15 (zstd is bundled in node:zlib)
+curl -LO https://github.com/LouisYang841/dsh-mini/releases/latest/download/dsh-mini.mjs
+export GEMINI_API_KEY=<your AI Studio key>
+node dsh-mini.mjs             # pi-tui shell; the bash tool hits Termux's real bash
+```
+
+Sessions persist under `~/.dsh-mini/sessions` (zstd JSONL; automatically
+falls back to uncompressed on Node < 22.15). Building from source on Termux:
+`npm install --ignore-scripts` (skips node-pty/koffi build steps — neither is
+needed at runtime: the bash tool uses plain child_process, and koffi is a
+Windows-only dynamic import in the persistence backend), then
+`bash cli/cli-build.sh`; esbuild's android-arm64 binary arrives via its
+optionalDependencies.
+
+## Releases
+
+Each GitHub release attaches `dsh-mini.mjs` (self-contained CLI) and
+`dsh-engine.mjs` (the portable engine bundle). Only tag after the CI
+conformance gate is green.
+
 ## CI
 
 `.github/workflows/conformance.yml` runs on every push: npm install → portable
