@@ -81,6 +81,15 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 `ARCHITECTURE.md`. Pitfalls and host-integration checklist:
 `skills/dsh-core-embedding/SKILL.md`.
 
+## Install (one-liner)
+
+```sh
+curl -fsSL https://github.com/LouisYang841/dsh-mini/raw/main/scripts/install.sh | sh
+```
+
+Installs `dsh-mini` as a command (bundle to `~/.dsh-mini/`, launcher on
+PATH). Requires Node >= 22.15. On Termux: `pkg install nodejs` first.
+
 ## Termux (Android)
 
 The release artifact is fully self-contained — no npm install needed (also

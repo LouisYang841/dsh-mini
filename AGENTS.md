@@ -82,6 +82,8 @@ only for final smoke; AI Studio free quota is per model, switch models.
    `bundle.mjs` → `dist/dsh-engine.mjs`.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z && gh release create vX.Y.Z
    dist/dsh-mini.mjs dist/dsh-engine.mjs`.
+4. `scripts/install.sh` downloads `releases/<tag>/download/dsh-mini.mjs` —
+   keep the artifact name stable across releases.
 
 ## File map
 
