@@ -1,0 +1,21 @@
+# build artifacts
+bundle.mjs
+cli/cli.mjs
+trace.*.json
+*.err
+
+# runtimes / vendored tools
+quickjs-*/
+qjs.tar.xz
+node_modules/
+
+# test output
+hello*.py
+test-nodefs.tmp.*
+
+# local secrets
+.env
+keys.env
+
+# OS
+.DS_Store

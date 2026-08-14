@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Build the dsh-mini CLI for Node (node:* builtins stay native).
+set -e
+cd "$(dirname "$0")/.."
+[ -e node_modules ] || ln -s /home/ubuntu/dsh/node_modules node_modules
+ESBUILD="${ESBUILD:-}"
+if [ -z "$ESBUILD" ]; then
+  if command -v npx >/dev/null 2>&1; then ESBUILD="npx --yes esbuild"
+  elif [ -x /home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild ]; then ESBUILD="/home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild"
+  else echo "esbuild not found: install it or set ESBUILD"; exit 1; fi
+fi
+$ESBUILD cli/cli.js \
+  --bundle \
+  --format=esm \
+  --platform=node \
+  --target=node22 \
+  --outfile=cli/cli.mjs \
+  --log-level=warning
+echo "built: cli/cli.mjs ($(wc -c < cli/cli.mjs) bytes)"
