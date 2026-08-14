@@ -74,10 +74,9 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 
 ## CI
 
-`ci/conformance.yml` is a ready GitHub Actions workflow (npm install →
-portable build → conformance gate → CLI build). To activate it, move it to
-`.github/workflows/` and push with a token that has the `workflow` scope
-(`gh auth refresh -s workflow` or a PAT).
+`.github/workflows/conformance.yml` runs on every push: npm install → portable
+bundle build → conformance gate (byte-identical vs `baseline.node.json`) →
+CLI build.
 
 ## Roadmap
 
