@@ -273,7 +273,11 @@ const boot = async (ctx) => {
 			plainRl = null;
 		}
 		const tuiSessionId = RESUME_ID ?? (process.env.DSH_FRESH ? `main-${Date.now().toString(36)}` : "main");
-		ctx.plugin(ccTuiNs, { sessionId: tuiSessionId }).then(
+		ctx.plugin(ccTuiNs, {
+			sessionId: tuiSessionId,
+			welcome: "dsh-mini — DeepSeek Harness 便携核心 · pi 壳 · DSH 引擎",
+			title: "dsh-mini · DeepSeek Harness",
+		}).then(
 			() => {},
 			(err) => {
 				console.error("[cc-tui] mount FAILED:", err?.stack ?? String(err));

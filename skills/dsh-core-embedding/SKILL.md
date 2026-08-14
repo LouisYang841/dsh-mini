@@ -298,6 +298,17 @@ byte-for-byte. Rules:
   are `session.jsonl.zstd` inside per-session directories
   (`root/--cwd--/<id>/`); zstd works on Node 25.
 
+## cc-tui palette patch (vendor override policy)
+
+- The community TUI's accent was SGR 95 (bright magenta) — visually harsh and
+  off-brand. Override: `accent.open` 95 -> 34 (DeepSeek blue) directly in
+  `vendor/node_modules/@openguardrails/dsh-tui/lib/index.js`, with an inline
+  comment pointing here. Vendor overrides are allowed ONLY for cosmetic,
+  config-less changes that upstream does not expose — never for logic.
+- Branding: the plugin Config takes `title` (terminal title) and `welcome`
+  (startup banner); both default to DeepSeek-branded values already, we set
+  them explicitly ("dsh-mini · DeepSeek Harness").
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is
