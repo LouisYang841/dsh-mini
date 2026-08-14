@@ -176,6 +176,17 @@ byte-for-byte. Rules:
   unfixed code (symptom: live run errors while the isolated replay passes).
 - Vendored pi files are MIT; keep the attribution header.
 
+## Distribution hygiene
+
+- **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is
+  BUILD-TIME only; they live in devDependencies, trimmed to direct imports.
+  Consumers take release artifacts (curl) or plain engine files — never an
+  npm install. `npm install --omit=dev` must install nothing; if it doesn't,
+  a runtime import snuck in and the manifest is wrong.
+- Release artifacts are staged in the workspace (dist/) and attached via
+  `gh release create` — the sandbox isolates /tmp between commands, so
+  absolute /tmp paths fail inside gh.
+
 ## Adding a new host (checklist)
 
 1. Copy the boot-plugin pattern from `main.js`/`cli/cli.js` (inject list:

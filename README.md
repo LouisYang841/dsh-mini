@@ -97,6 +97,20 @@ Each GitHub release attaches `dsh-mini.mjs` (self-contained CLI) and
 `dsh-engine.mjs` (the portable engine bundle). Only tag after the CI
 conformance gate is green.
 
+## Consumption modes (zero runtime npm dependencies)
+
+The package manifest carries **no runtime dependencies** — the release
+artifacts are fully self-contained. Pick the mode that fits:
+
+1. **CLI artifact** (recommended): `curl -LO` the release `dsh-mini.mjs` and
+   run it with Node >= 22.15. No npm install, no DSH package tree.
+2. **Engine-only**: take `dsh-engine.mjs` + `shims/` + `polyfills.js` (all
+   plain files) into your own harness; `main.js` is the boot reference and
+   `baseline.node.json` the conformance gate. No npm install either.
+3. **Source build**: `git clone` + `npm install` (build-time devDependencies
+   only) + `bash cli/cli-build.sh`. Add `--omit=dev` and nothing gets
+   installed at all; add `--ignore-scripts` on Termux.
+
 ## CI
 
 `.github/workflows/conformance.yml` runs on every push: npm install → portable
