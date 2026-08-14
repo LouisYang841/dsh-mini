@@ -64,6 +64,10 @@ cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 node cli/cli.mjs [model] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
 ```
 
+Provider credentials come from the environment: `GEMINI_API_KEY=<key>` (or a
+gitignored `.env`; see `.env.example`). Free AI Studio quota is per model —
+`/model <id>` switches when one bucket runs dry.
+
 Architecture (engine/host seams, retrofit recipe, upgrade policy):
 `ARCHITECTURE.md`. Pitfalls and host-integration checklist:
 `skills/dsh-core-embedding/SKILL.md`.
@@ -71,6 +75,8 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 ## Roadmap
 
 - [x] pi-tui shell (the real `@earendil-works/pi-tui` framework; session events → components)
-- [ ] Session stats + compaction on resume
-- [ ] Bash tool + sandbox policy for the Node profile
+- [x] bash tool: pi's native executor (vendored `vendor-pi/`, MIT) wrapped as a DSH tool; process-group kill, timeout, truncation, temp-file spill
+- [x] `/stats` (turns/messages/tools/token totals from the event log)
+- [ ] Compaction for long sessions (dsh-compaction + dsh-compaction-basic + dsh-token-meter — pure packages, trigger wiring TBD)
+- [ ] Sandbox policy for the bash tool (dsh-sandbox-policy + escalation)
 - [ ] Operit QuickJS host bridge (long-lived event loop + JNI bridge)

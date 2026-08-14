@@ -160,6 +160,22 @@ byte-for-byte. Rules:
   build (`--alias:@earendil-works/pi-tui=./vendor/.../dist/index.js`); CI
   gets the same packages from npm.
 
+## pi-native bash tool (cli/bash-tool.js + vendor-pi/)
+
+- **Prefer pi's native pieces over DSH packages when the seam allows**: the
+  bash tool vendors pi's executor verbatim (`vendor-pi/bash-executor.ts`:
+  streaming, ANSI/binary sanitization, 50KB truncate-tail, temp-file spill,
+  abort) and reimplements only the platform glue (local `BashOperations`:
+  `spawn("bash", ["-c", cmd], {detached:true})` + `process.kill(-pid)`).
+  This replaces the whole DSH bash stack (shell/sandbox/sandbox-policy/
+  subprocess-local/node-pty) with ONE tool definition.
+- Tool DTOs must be JSON-lossless: strip `undefined` fields
+  (`...(x ? {fullOutputPath: x} : {})`) or snapshot validation fails with
+  "value is not lossless JSON".
+- Rebuild after every tool edit — a stale bundle fails exactly like the
+  unfixed code (symptom: live run errors while the isolated replay passes).
+- Vendored pi files are MIT; keep the attribution header.
+
 ## Adding a new host (checklist)
 
 1. Copy the boot-plugin pattern from `main.js`/`cli/cli.js` (inject list:

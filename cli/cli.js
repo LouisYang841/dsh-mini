@@ -15,11 +15,16 @@ import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { NodeFs } from "./node-fs.js";
 import { createTuiHost } from "./tui-renderer.js";
+import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const API_KEY = process.env.GEMINI_API_KEY ?? "GEMINI_API_KEY_REDACTED";
+const API_KEY = process.env.GEMINI_API_KEY;
+if (!API_KEY) {
+	console.error("GEMINI_API_KEY is required (create one at https://aistudio.google.com/apikey).");
+	process.exit(1);
+}
 const CWD = process.cwd();
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
 // pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
@@ -36,7 +41,7 @@ const PERSONA = [
 	"You are dsh-mini, a compact interactive coding agent CLI built on the DeepSeek Harness core.",
 	"You help the user with coding tasks inside the current workspace directory.",
 	"Prefer the read/list tools to inspect files, the edit tool for targeted changes, and the write tool to create or replace files.",
-	"Use todo_write to track multi-step work.",
+	"Use todo_write to track multi-step work. A bash tool is available for builds, tests, and git — prefer file tools for plain file work.",
 	"Keep replies concise and use the language the user writes in.",
 ].join(" ");
 
@@ -46,6 +51,8 @@ process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection
 
 const boot = async (ctx) => {
 	ctx.llm.registerAdapter(["google"], new GeminiAdapter(API_KEY));
+	ctx.tools.register(defineBashTool());
+	ctx.systemPrompt.section(bashGuidanceSection());
 
 	if (LIST_SESSIONS) {
 		const headers = await ctx.sessionPersistence.list();
@@ -124,6 +131,33 @@ const boot = async (ctx) => {
 				agent = makeAgent(currentModel);
 				if (ui) ui.setStatus(statusLine());
 				else console.log(`(new session: ${agent.session.id})`);
+				return;
+			}
+			if (trimmed === "/stats") {
+				const events = agent.session.events;
+				let turns = 0;
+				let userMsgs = 0;
+				let assistantMsgs = 0;
+				let toolCalls = 0;
+				let inTok = 0;
+				let outTok = 0;
+				let cachedTok = 0;
+				for (const e of events) {
+					if (e.type === "turn/start") turns += 1;
+					else if (e.type === "user/message") userMsgs += 1;
+					else if (e.type === "assistant/message") {
+						assistantMsgs += 1;
+						const u = e.data?.usage;
+						if (u) {
+							inTok += u.inputTokens ?? 0;
+							outTok += u.outputTokens ?? 0;
+							cachedTok += u.cachedInputTokens ?? 0;
+						}
+					} else if (e.type === "tool/call") toolCalls += 1;
+				}
+				const row = `turns=${turns} messages=${userMsgs}/${assistantMsgs} tools=${toolCalls} tokens=\u2191${inTok} \u2193${outTok} (cached ${cachedTok})`;
+				if (ui) ui.addToolResult(row, false);
+				else console.log(row);
 				return;
 			}
 			if (trimmed === "/sessions") {
