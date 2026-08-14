@@ -16,7 +16,14 @@ jobs:
         run: npm install
       - name: Build portable bundle
         run: bash build.sh
-      - name: Run conformance (Node)
+      - name: Build & run conformance (Node)
         run: bash run.sh
+      - name: Build QuickJS
+        run: |
+          git clone --depth 1 https://github.com/quickjs-ng/quickjs.git quickjs-ng
+          make -C quickjs-ng -j2
+          ln -sf build/qjs quickjs-ng/qjs
+      - name: Run conformance (QuickJS cross-check, enforced)
+        run: DSH_REQUIRE_QJS=1 bash run.sh
       - name: Build CLI
         run: bash cli/cli-build.sh

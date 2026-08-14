@@ -13,7 +13,9 @@ for c in quickjs-ng/qjs quickjs-*/qjs ../quickjs*/qjs; do [ -x "$c" ] && QJS="$c
 if [ -n "$QJS" ]; then
   "$QJS" -m bundle.mjs > trace.qjs.json 2> qjs.err
   echo "qjs: exit=$? events=$(python3 -c "import json;print(sum(len(s['events']) for s in json.load(open('trace.qjs.json'))))")"
-  if cmp -s trace.node.json trace.qjs.json; then echo "node vs qjs: IDENTICAL"; else echo "node vs qjs: DIFFER"; diff <(python3 -m json.tool trace.node.json) <(python3 -m json.tool trace.qjs.json) | head -30; fi
+  if cmp -s trace.node.json trace.qjs.json; then echo "node vs qjs: IDENTICAL"; else echo "node vs qjs: DIFFER"; diff <(python3 -m json.tool trace.node.json) <(python3 -m json.tool trace.qjs.json) | head -30; exit 1; fi
+elif [ -n "$DSH_REQUIRE_QJS" ]; then
+  echo "qjs: REQUIRED but not found (set DSH_REQUIRE_QJS=1 to enforce)"; exit 1
 else
   echo "qjs: not built yet (run build in quickjs-ng/)"
 fi
