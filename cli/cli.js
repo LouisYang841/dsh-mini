@@ -40,6 +40,8 @@ import * as storageDomainNs from "@deepseek-ai/dsh-storage-domain";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
 import { createTuiHost } from "./tui-renderer.js";
+import { parseArgs, PROVIDER_DEFAULTS } from "./args.js";
+import { loadEnvFiles, persistCredential } from "./env.js";
 import { renderBanner } from "./banner.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
@@ -65,25 +67,12 @@ const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_
 const USE_CC_TUI = TTY && process.env.DSH_TUI !== "basic" && !process.env.DSH_PLAIN;
 
 // CLI args: node cli.mjs [model] [--provider <id>] [--resume <id>] [--sessions]
-const ARGS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const RESUME_INDEX = process.argv.indexOf("--resume");
-const RESUME_ID = RESUME_INDEX >= 0 ? process.argv[RESUME_INDEX + 1] : undefined;
-const PROVIDER_INDEX = process.argv.indexOf("--provider");
-const PROVIDER_OVERRIDE = PROVIDER_INDEX >= 0 ? process.argv[PROVIDER_INDEX + 1] : undefined;
-const LIST_SESSIONS = process.argv.includes("--sessions");
-// DeepSeek is the default provider (this is dsh, after all): the DSH-native
-// dsh-llm-deepseek adapter owns the "deepseek-official" route.
-const PROVIDER_DEFAULTS = {
-	"deepseek-official": { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
-	google: { model: "gemini-flash-latest", keyEnv: "GEMINI_API_KEY" },
-	// pi-ai routes (the pi provider ecosystem): one adapter, many providers
-	deepseek: { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
-	openai: { model: "gpt-4o-mini", keyEnv: "OPENAI_API_KEY" },
-	anthropic: { model: "claude-sonnet-4-5", keyEnv: "ANTHROPIC_API_KEY" },
-	openrouter: { model: "openai/gpt-4o-mini", keyEnv: "OPENROUTER_API_KEY" },
-};
-const PROVIDER = PROVIDER_OVERRIDE ?? process.env.DSH_PROVIDER ?? (process.env.DEEPSEEK_API_KEY || !process.env.GEMINI_API_KEY ? "deepseek-official" : "google");
-const MODEL = ARGS[0] ?? PROVIDER_DEFAULTS[PROVIDER]?.model ?? "deepseek-v4-flash";
+const {
+	model: MODEL,
+	provider: PROVIDER,
+	resumeId: RESUME_ID,
+	listSessions: LIST_SESSIONS,
+} = parseArgs(process.argv.slice(2), process.env);
 
 const PERSONA = [
 	"You are dsh-mini, a compact interactive coding agent CLI built on the DeepSeek Harness core.",
@@ -99,32 +88,20 @@ process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection
 
 // Minimal env loader: ~/.dsh-mini/env then ./.env (gitignored), KEY=VALUE
 // lines, never overriding the real environment.
-for (const envFile of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
-	try {
-		if (!existsSync(envFile)) continue;
-		for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
-			const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-			if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].trim();
-		}
-	} catch {
-		// unreadable env file is not fatal
-	}
-}
+loadEnvFiles([join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")], process.env);
 
 // Persist an interactively entered key: user config dir first, cwd .env
 // fallback (both gitignored; never touch the repo's tracked files).
-function persistCredential(provider, key) {
+function persistCredentialImpl(provider, key) {
 	const env = PROVIDER_DEFAULTS[provider].keyEnv;
-	for (const target of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
-		try {
-			mkdirSync(dirname(target), { recursive: true });
-			const previous = existsSync(target) ? readFileSync(target, "utf8").replace(new RegExp(`^${env}=.*$`, "m"), "").trimEnd() : "";
-			writeFileSync(target, `${previous}${previous ? "\n" : ""}${env}=${key}\n`);
-			console.log(`(saved ${env} to ${target})`);
-			return;
-		} catch {
-			// try the next target
-		}
+	const written = persistCredential(
+		[join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")],
+		env,
+		key,
+	);
+	if (written) {
+		console.log(`(saved ${env} to ${written})`);
+		return;
 	}
 	console.error(`[warn] could not persist ${env}; it is set for this session only`);
 }
@@ -272,7 +249,7 @@ const boot = async (ctx) => {
 				process.exit(1);
 			}
 			process.env[PROVIDER_DEFAULTS[answer].keyEnv] = key;
-			persistCredential(answer, key);
+			persistCredentialImpl(answer, key);
 		}
 	}
 
