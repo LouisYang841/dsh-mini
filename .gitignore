@@ -25,6 +25,3 @@ keys.env
 vendor/
 dist/
 npm-stage/
-operit/dshmini.toolpkg.zip
-operit/mocks/.mock-store/
-operit/.mock-store/
