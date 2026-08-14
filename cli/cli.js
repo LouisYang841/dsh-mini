@@ -309,7 +309,7 @@ const boot = async (ctx) => {
 	async function handleLine(line) {
 		const trimmed = line.trim();
 		try {
-			if (trimmed === "/exit" || trimmed === "/quit") {
+			if (/^(\/)?(exit|quit|e|q)(\(\))?$/i.test(trimmed)) {
 				process.exit(0);
 			}
 			if (trimmed === "") return;
