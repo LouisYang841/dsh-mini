@@ -22,3 +22,4 @@ keys.env
 
 # vendored npm tarballs (fetched by hand; CI uses npm install)
 vendor/
+dist/
