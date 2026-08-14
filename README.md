@@ -66,7 +66,11 @@ node cli/cli.mjs [model] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides
 
 **Providers.** DeepSeek is the default (`deepseek-official` route via DSH's own
 `dsh-llm-deepseek` adapter; `DEEPSEEK_API_KEY`), Google Gemini via
-`GEMINI_API_KEY`. Switch with `/provider <id>`, models with `/model <id>`.
+`GEMINI_API_KEY`. The pi provider ecosystem rides one adapter
+(`dsh-llm-pi-ai`): set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
+`OPENROUTER_API_KEY` and the `openai` / `anthropic` / `openrouter` routes
+light up automatically (plus the pi-ai `deepseek` route). Switch with
+`/provider <id>`, models with `/model <id>`.
 **First run with no keys anywhere starts an interactive setup**: pick a
 provider, paste the key — it is persisted to `~/.dsh-mini/env` (fallback
 `./.env`, both gitignored) and loaded automatically on the next start.

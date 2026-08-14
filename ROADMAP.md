@@ -18,16 +18,19 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
 - [x] `AGENTS.md` workspace-instruction injection (system prompt section,
   order -90, `DSH_NO_AGENTS=1` to disable).
 
-## P0 — next
+## P0 — done
 
-### pi-ai multi-provider adapter (挖 pi, seam ①)
+### pi-ai multi-provider adapter (挖 DSH, seam ①)
 
-One `LlmAdapter` over `@earendil-works/pi-ai` (the provider library pi itself
-uses) unlocks OpenAI / Anthropic / Ollama / Bedrock / OpenRouter / local
-models, plus the model catalog — `--list-models` comes nearly free. Cost:
-one adapter file (~150 lines, same shape as `gemini-adapter.js`) + pi-ai as a
-build-time dep. The Gemini adapter stays as the reference for streaming
-quirks (thought signatures etc. are provider-specific).
+Mounted DSH's official `dsh-llm-pi-ai` (the same pi-ai-backed adapter the web
+profile uses — zero adapter code of our own): routes for `deepseek`,
+`openai`, `anthropic`, `openrouter` auto-enable when their env keys exist
+(`DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`OPENROUTER_API_KEY`),
+live-verified end-to-end on the `deepseek` route. Notes: pi-ai 0.82.1 has no
+`ollama` catalog entry (routes without catalog models must list `models`
+explicitly — revisit with newer pi-ai); model ids follow pi-ai's catalog
+(`deepseek-v4-flash`); the CLI artifact grows to ~7.6MB from the bundled
+provider SDKs (the portable engine bundle is unaffected at 419KB).
 
 ## P1 — UX from the pi-tui package we already ship
 

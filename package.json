@@ -40,6 +40,8 @@
     "@deepseek-ai/dsh-session-projection-cache": "0.1.0-rc.6",
     "@deepseek-ai/dsh-storage": "0.1.0-rc.6",
     "@deepseek-ai/dsh-storage-json": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-storage-domain": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-storage-domain": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.0-rc.6",
+    "@earendil-works/pi-ai": "0.82.1"
   }
 }

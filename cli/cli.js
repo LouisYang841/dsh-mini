@@ -17,6 +17,7 @@ import * as commandsNs from "@deepseek-ai/dsh-commands";
 import * as userQuestionsNs from "@deepseek-ai/dsh-user-questions";
 import * as tokenMeterNs from "@deepseek-ai/dsh-token-meter";
 import * as toolAskUserNs from "@deepseek-ai/dsh-tool-ask-user";
+import * as piAiNs from "@deepseek-ai/dsh-llm-pi-ai";
 import * as ccTuiNs from "@openguardrails/dsh-tui";
 import * as ccTuiPromptNs from "@openguardrails/dsh-tui/prompt";
 import * as skillNs from "@deepseek-ai/dsh-skill";
@@ -60,6 +61,11 @@ const LIST_SESSIONS = process.argv.includes("--sessions");
 const PROVIDER_DEFAULTS = {
 	"deepseek-official": { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
 	google: { model: "gemini-flash-latest", keyEnv: "GEMINI_API_KEY" },
+	// pi-ai routes (the pi provider ecosystem): one adapter, many providers
+	deepseek: { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
+	openai: { model: "gpt-4o-mini", keyEnv: "OPENAI_API_KEY" },
+	anthropic: { model: "claude-sonnet-4-5", keyEnv: "ANTHROPIC_API_KEY" },
+	openrouter: { model: "openai/gpt-4o-mini", keyEnv: "OPENROUTER_API_KEY" },
 };
 const PROVIDER = PROVIDER_OVERRIDE ?? process.env.DSH_PROVIDER ?? (process.env.DEEPSEEK_API_KEY || !process.env.GEMINI_API_KEY ? "deepseek-official" : "google");
 const MODEL = ARGS[0] ?? PROVIDER_DEFAULTS[PROVIDER]?.model ?? "deepseek-v4-flash";
@@ -112,6 +118,9 @@ const AGENTS_MD_CAP = 30 * 1024; // keep injected instructions bounded
 
 const boot = async (ctx) => {
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
+	if (process.env.DSH_DEBUG) {
+		console.error("[debug] registered adapters:", [...ctx.llm.adapters.keys()].join(","));
+	}
 	ctx.tools.register(defineBashTool());
 	ctx.systemPrompt.section(bashGuidanceSection());
 	// Workspace instructions: inject <cwd>/AGENTS.md so the agent starts every
@@ -198,7 +207,7 @@ const boot = async (ctx) => {
 		} else {
 			// First run: no keys anywhere — interactive provider + key setup.
 			console.log("No API key detected. Configure a provider:");
-			const answer = (await askUser("provider (deepseek-official/google) [deepseek-official]: ")).trim() || "deepseek-official";
+			const answer = (await askUser(`provider (${Object.keys(PROVIDER_DEFAULTS).join("/")}) [deepseek-official]: `)).trim() || "deepseek-official";
 			if (!PROVIDER_DEFAULTS[answer]) {
 				console.error(`unknown provider "${answer}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})`);
 				process.exit(1);
@@ -470,6 +479,14 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("llm-deepseek", deepseekLlm);
+mount("llm-pi-ai", piAiNs, {
+	providers: {
+		deepseek: { apiKeyEnv: "DEEPSEEK_API_KEY" },
+		...(process.env.OPENAI_API_KEY ? { openai: { apiKeyEnv: "OPENAI_API_KEY" } } : {}),
+		...(process.env.ANTHROPIC_API_KEY ? { anthropic: { apiKeyEnv: "ANTHROPIC_API_KEY" } } : {}),
+		...(process.env.OPENROUTER_API_KEY ? { openrouter: { apiKeyEnv: "OPENROUTER_API_KEY" } } : {}),
+	},
+});
 mount("commands", commandsNs.CommandRuntime);
 mount("user-questions", userQuestionsNs.UserQuestionService);
 mount("token-meter", tokenMeterNs.TokenMeter);

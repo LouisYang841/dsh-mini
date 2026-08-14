@@ -210,6 +210,19 @@ byte-for-byte. Rules:
   expects (atomic rename, stale-version checks, diff bases) — mounting it
   removes a whole class of hand-replicated DTO bugs.
 
+## Multi-provider (dsh-llm-pi-ai) findings
+
+- The official `dsh-llm-pi-ai` mounts as a function plugin with
+  `providers: { <route>: { apiKeyEnv: "ENV_NAME" } }`; routes not present in
+  pi-ai's installed catalog MUST list `models` explicitly or resolveProfiles
+  throws ("provider X resolves no models"). pi-ai 0.82.1 has no ollama
+  catalog entry; model ids come from the catalog (`deepseek-v4-flash`).
+- Bundling pi-ai statically pulls the provider SDKs (AWS Bedrock, Anthropic,
+  Google genai, Mistral) — the CLI artifact grows to ~7.6MB. Acceptable for
+  the Node CLI; keep the portable engine bundle free of it.
+- Two DeepSeek routes coexist: `deepseek-official` (dsh-llm-deepseek,
+  direct) and `deepseek` (pi-ai) — distinct route strings, no adapter clash.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is
