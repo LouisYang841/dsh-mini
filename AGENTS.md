@@ -65,6 +65,7 @@ the agent to write its own scripts. Docs for agents beat tools for agents.
 ./build.sh                 # portable engine bundle (bundle.mjs)
 cli/cli-build.sh           # CLI bundle (cli/cli.mjs); vendor alias is auto
 ./run.sh                   # conformance: Node (+QuickJS if built) vs baseline
+node --test                # unit tests (mode bootstrap, tool scanner, settings)
 node cli/cli.mjs <model>   # run locally (GEMINI_API_KEY required)
 ```
 
@@ -102,6 +103,7 @@ only for final smoke; AI Studio free quota is per model, switch models.
 - `cli/tui-renderer.js` — pi-tui shell
 - `cli/gemini-adapter.js` — seam ① reference adapter
 - `cli/mode-bootstrap.js` — minimal/standard mode fold + prompt/tool filter
+- `cli/config.js` — pi-style JSON settings (user + project, env, CLI precedence)
 - `cli/tool-scanner.js` — out-of-process toolpackage scan/register/run
 - `docs/toolpackages.md` + `skills/toolpkg-authoring/SKILL.md` — custom-tool contract
 - `cli/node-fs.js` — seam ② reference implementation

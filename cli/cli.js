@@ -44,6 +44,7 @@ import { createTuiHost } from "./tui-renderer.js";
 import { renderBanner } from "./banner.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import { appendMode, apply as applyModeBootstrap, foldMode, isValidMode, LEGACY_FALLBACK_MODE, MODES } from "./mode-bootstrap.js";
+import { CONFIG_DEFAULTS, coerceConfigPatch, loadConfig, saveUserConfig } from "./config.js";
 import { registerToolpackages, scanToolpackages } from "./tool-scanner.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
@@ -71,19 +72,29 @@ for (const envFile of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) 
 		// unreadable env file is not fatal
 	}
 }
+let CONFIG;
+try {
+	CONFIG = loadConfig();
+} catch (error) {
+	console.error(`[config] ${error.message}`);
+	process.exit(1);
+}
+
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
+const SESSIONS_DIR = CONFIG.sessionsDir;
 const TOOL_ROOTS = [...new Set([join(CWD, "tools"), join(homedir(), ".dsh-mini", "tools")])];
 // node:zlib zstd is built into Node >= 22.15 (no system lib); degrade to
 // uncompressed JSONL on older runtimes (e.g. some Termux images).
 const HAS_ZSTD = typeof zstdCompress === "function";
 if (!HAS_ZSTD) console.error("[warn] node:zlib zstd unavailable (Node < 22.15): sessions will be stored uncompressed");
-// pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
-const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
-// Renderer modes: default = the community pi-tui-based full-screen TUI
-// (@openguardrails/dsh-tui); DSH_TUI=basic = our minimal chat-flow shell;
-// DSH_PLAIN=1 or non-TTY = plain line mode.
-const USE_CC_TUI = TTY && process.env.DSH_TUI !== "basic" && !process.env.DSH_PLAIN;
+// Renderer modes: cc = the community pi-tui-based full-screen TUI
+// (@openguardrails/dsh-tui, default); basic = our minimal chat-flow shell;
+// plain = line mode. Legacy DSH_PLAIN/DSH_TUI env switches stay authoritative
+// over the settings file.
+const RAW_TTY = !!process.stdout.isTTY && !!process.stdin.isTTY;
+const RENDERER = process.env.DSH_PLAIN ? "plain" : process.env.DSH_TUI === "basic" ? "basic" : CONFIG.renderer === "auto" ? "cc" : CONFIG.renderer;
+const TTY = RAW_TTY && RENDERER !== "plain";
+const USE_CC_TUI = TTY && RENDERER === "cc";
 
 // CLI args: node cli.mjs [model] [--provider <id>] [--mode <id>] [--resume <id>] [--sessions]
 // Flags with values consume the following token so their value is not mistaken
@@ -111,9 +122,9 @@ const RESUME_ID = flagValue("--resume");
 const PROVIDER_OVERRIDE = flagValue("--provider");
 const LIST_SESSIONS = process.argv.includes("--sessions");
 const MODE_OVERRIDE = flagValue("--mode");
-const MODE = MODE_OVERRIDE ?? process.env.DSH_MODE ?? "minimal";
+const MODE = MODE_OVERRIDE ?? CONFIG.defaultMode;
 if (!isValidMode(MODE)) {
-	console.error(`unknown mode "${MODE}" (known: ${MODES.join(", ")}); use --mode <id> or DSH_MODE`);
+	console.error(`unknown mode "${MODE}" (known: ${MODES.join(", ")}); use --mode <id>, DSH_MODE, or the defaultMode setting`);
 	process.exit(1);
 }
 // DeepSeek is the default provider (this is dsh, after all): the DSH-native
@@ -127,12 +138,12 @@ const PROVIDER_DEFAULTS = {
 	anthropic: { model: "claude-sonnet-4-5", keyEnv: "ANTHROPIC_API_KEY" },
 	openrouter: { model: "openai/gpt-4o-mini", keyEnv: "OPENROUTER_API_KEY" },
 };
-const PROVIDER = PROVIDER_OVERRIDE ?? process.env.DSH_PROVIDER ?? (process.env.DEEPSEEK_API_KEY || !process.env.GEMINI_API_KEY ? "deepseek-official" : "google");
+const PROVIDER = PROVIDER_OVERRIDE ?? CONFIG.defaultProvider ?? (process.env.DEEPSEEK_API_KEY || !process.env.GEMINI_API_KEY ? "deepseek-official" : "google");
 if (!PROVIDER_DEFAULTS[PROVIDER]) {
-	console.error(`unknown provider "${PROVIDER}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")}); use --provider <id> or DSH_PROVIDER`);
+	console.error(`unknown provider "${PROVIDER}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")}); use --provider <id>, DSH_PROVIDER, or the defaultProvider setting`);
 	process.exit(1);
 }
-const MODEL = ARGS[0] ?? PROVIDER_DEFAULTS[PROVIDER]?.model ?? "deepseek-v4-flash";
+const MODEL = ARGS[0] ?? CONFIG.defaultModel ?? PROVIDER_DEFAULTS[PROVIDER]?.model ?? "deepseek-v4-flash";
 
 const PERSONA = [
 	"You are dsh-mini, a compact interactive coding agent CLI built on the DeepSeek Harness core.",
@@ -298,6 +309,116 @@ const tuiResumeHostProvider = {
 
 const boot = async (ctx) => {
 	let currentMode = MODE;
+	// New sessions in THIS process use the configured default, not whatever
+	// mode a resumed legacy session happened to be in. Only an explicit
+	// /mode switch (with or without --global) changes it for the process.
+	let newSessionMode = MODE;
+	let currentConfig = CONFIG;
+
+	const CONFIG_ENV_KEYS = {
+		defaultMode: "DSH_MODE",
+		defaultProvider: "DSH_PROVIDER",
+		defaultModel: "DSH_MODEL",
+		sessionsDir: "DSH_SESSIONS",
+		compactionRatio: "DSH_COMPACT_RATIO",
+		titles: "DSH_TITLES",
+		workspaceInstructions: "DSH_NO_AGENTS",
+		showBanner: "DSH_NO_BANNER",
+		renderer: "DSH_RENDERER",
+	};
+	const configSource = (key) => {
+		if (key === "defaultMode" && MODE_OVERRIDE !== undefined) return "cli";
+		if (key === "defaultProvider" && PROVIDER_OVERRIDE !== undefined) return "cli";
+		if (key === "defaultModel" && ARGS[0] !== undefined) return "cli";
+		if (key === "renderer" && (process.env.DSH_PLAIN !== undefined || process.env.DSH_TUI !== undefined)) return "env";
+		if (process.env[CONFIG_ENV_KEYS[key]] !== undefined) return "env";
+		if (key in currentConfig.raw.project) return "project";
+		if (key in currentConfig.raw.user) return "user";
+		return "default";
+	};
+	const reloadConfig = () => {
+		let next;
+		try {
+			next = loadConfig();
+		} catch (error) {
+			return { error };
+		}
+		// loadConfig only knows env, so re-apply the process-launch CLI
+		// overrides before the snapshot is shown again.
+		if (MODE_OVERRIDE !== undefined) next.defaultMode = MODE_OVERRIDE;
+		if (PROVIDER_OVERRIDE !== undefined) next.defaultProvider = PROVIDER_OVERRIDE;
+		if (ARGS[0] !== undefined) next.defaultModel = ARGS[0];
+		return { config: next };
+	};
+	const configSnapshot = () => ({
+		defaultMode: currentConfig.defaultMode,
+		defaultProvider: currentConfig.defaultProvider ?? "(auto)",
+		defaultModel: currentConfig.defaultModel ?? "(provider default)",
+		sessionsDir: currentConfig.sessionsDir,
+		compactionRatio: currentConfig.compactionRatio,
+		titles: currentConfig.titles,
+		workspaceInstructions: currentConfig.workspaceInstructions,
+		showBanner: currentConfig.showBanner,
+		renderer: currentConfig.renderer,
+	});
+	const configEntry = (key) => `${key}: ${String(configSnapshot()[key])} [${configSource(key)}]`;
+	const configText = () => [
+		"settings (CLI > env > project > user > defaults)",
+		`user: ${currentConfig.userPath}`,
+		`project: ${currentConfig.path}`,
+		...Object.keys(configSnapshot()).map((key) => configEntry(key)),
+		"usage: /config [key [value]] — writes changes to the user settings file",
+	].join("\n");
+	const validateConfigPatch = (patch) => {
+		if (patch.defaultMode !== undefined && !isValidMode(patch.defaultMode)) throw new Error(`defaultMode must be one of ${MODES.join(", ")}`);
+		if (patch.defaultProvider !== undefined && !PROVIDER_DEFAULTS[patch.defaultProvider]) throw new Error(`defaultProvider must be one of ${Object.keys(PROVIDER_DEFAULTS).join(", ")}`);
+		if (patch.renderer !== undefined && !["auto", "cc", "basic", "plain"].includes(patch.renderer)) throw new Error(`renderer must be one of auto, cc, basic, plain`);
+		if (patch.compactionRatio !== undefined && (!Number.isFinite(patch.compactionRatio) || patch.compactionRatio <= 0 || patch.compactionRatio > 1)) throw new Error("compactionRatio must be > 0 and <= 1");
+		return patch;
+	};
+	const persistSetting = (key, value) => {
+		const patch = validateConfigPatch(coerceConfigPatch(key, value));
+		const saved = saveUserConfig(patch);
+		const loaded = reloadConfig();
+		if (loaded.error) throw loaded.error;
+		currentConfig = loaded.config;
+		// A global defaultMode change takes effect for future /new sessions
+		// immediately unless a CLI/env override owns the launch default.
+		const runtimeApplied = patch.defaultMode !== undefined && loaded.config.defaultMode === patch.defaultMode;
+		if (runtimeApplied) newSessionMode = patch.defaultMode;
+		return { key, value: patch[key], path: saved.path, runtimeApplied };
+	};
+	const handleConfigCommand = async (raw) => {
+		const args = raw.trim().split(/\s+/).filter(Boolean);
+		if (args.length === 0) return { kind: "success", text: configText() };
+		const key = args[0];
+		if (!(key in CONFIG_DEFAULTS)) return { kind: "error", text: `unknown config field "${key}" (known: ${Object.keys(CONFIG_DEFAULTS).join(", ")})` };
+		if (args.length === 1) return { kind: "success", text: configEntry(key) };
+		const value = args.slice(1).join(" ").trim();
+		if (value.length === 0) return { kind: "error", text: `${key} requires a value` };
+		try {
+			const saved = persistSetting(key, value);
+			const staticKeys = new Set(["sessionsDir", "compactionRatio", "titles", "workspaceInstructions", "showBanner", "renderer"]);
+			const note = key === "defaultMode"
+				? saved.runtimeApplied
+					? "future /new sessions use it now; use /mode <id> to switch this session"
+					: `saved, but the ${configSource(key)} value still overrides it for this process`
+				: staticKeys.has(key)
+					? "restart dsh-mini to apply"
+					: "restart dsh-mini to use it as the launch default";
+			return { kind: "success", text: `saved ${key}=${String(saved.value)} to ${saved.path}\n${note}` };
+		} catch (error) {
+			return { kind: "error", text: `[config] ${error.message}` };
+		}
+	};
+	const parseModeArgs = (raw) => {
+		const parts = raw.trim().split(/\s+/).filter(Boolean);
+		const mode = parts[0];
+		const flags = parts.slice(1);
+		if (flags.some((flag) => flag !== "--global")) return { error: `unknown mode argument "${flags.find((flag) => flag !== "--global")}" (use --global)` };
+		return { mode, global: flags.includes("--global") };
+	};
+
 	const formatStats = (events) => {
 		let turns = 0;
 		let userMsgs = 0;
@@ -396,7 +517,7 @@ const boot = async (ctx) => {
 			process.exit(1);
 		}
 	};
-	if (TTY && !process.env.DSH_NO_BANNER) process.stdout.write(renderBanner());
+	if (TTY && CONFIG.showBanner) process.stdout.write(renderBanner());
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
 	// /new: available in every renderer. In the community TUI it restarts the
 	// process with a fresh session id; plain mode handles it in handleLine.
@@ -416,8 +537,8 @@ const boot = async (ctx) => {
 		description: "Start a fresh session (restarts with a new session id)",
 		handler: async (invocation) => {
 			await flushSession(invocation.agent.session);
-			await restartProcess(restartArgs(), currentMode);
-			return { kind: "success", text: `starting a fresh session (${currentMode} mode)` };
+			await restartProcess(restartArgs(), newSessionMode);
+			return { kind: "success", text: `starting a fresh session (${newSessionMode} mode)` };
 		},
 	});
 	ctx.commands.register({
@@ -456,23 +577,43 @@ const boot = async (ctx) => {
 			if (!next) return { kind: "success", text: providersText() };
 			if (!PROVIDER_DEFAULTS[next]) return { kind: "error", text: `unknown provider "${next}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})` };
 			await flushSession(invocation.agent.session);
-			await restartProcess(providerRestartArgs(next), currentMode);
+			// A provider switch always mints a new session: use the configured
+			// default mode, not the mode of the session we are leaving.
+			await restartProcess(providerRestartArgs(next), newSessionMode);
 			return { kind: "success", text: `restarting with provider ${next}` };
 		},
 	});
 	ctx.commands.register({
+		name: "config",
+		description: "Show settings, or save one to ~/.dsh-mini/settings.json",
+		input: { hint: "[key [value]]" },
+		handler: async (invocation) => handleConfigCommand((invocation.rawInput ?? "").trim()),
+	});
+	ctx.commands.register({
 		name: "mode",
-		description: "Show or switch the agent mode (minimal|standard)",
-		input: { hint: "[minimal|standard]" },
+		description: "Show/switch mode; --global also persists the new default",
+		input: { hint: "[minimal|standard [--global]]" },
 		handler: async (invocation) => {
-			const next = (invocation.rawInput ?? "").trim();
-			if (!next) return { kind: "success", text: `mode: ${currentMode} (known: ${MODES.join(", ")}; new sessions default to minimal)` };
-			if (!isValidMode(next)) return { kind: "error", text: `unknown mode "${next}" (known: ${MODES.join(", ")})` };
+			const parsed = parseModeArgs((invocation.rawInput ?? "").trim());
+			if (parsed.error) return { kind: "error", text: parsed.error };
+			if (!parsed.mode) return { kind: "success", text: `mode: ${currentMode} (new sessions default to ${newSessionMode}; known: ${MODES.join(", ")})` };
+			if (!isValidMode(parsed.mode)) return { kind: "error", text: `unknown mode "${parsed.mode}" (known: ${MODES.join(", ")})` };
+			if (parsed.global) {
+				try {
+					saveUserConfig({ defaultMode: parsed.mode });
+					const loaded = reloadConfig();
+					if (loaded.error) throw loaded.error;
+					currentConfig = loaded.config;
+				} catch (error) {
+					return { kind: "error", text: `[mode --global] ${error.message}` };
+				}
+			}
+			newSessionMode = parsed.mode;
 			// The community TUI owns its session id, so switching mode restarts
 			// the process with a fresh session, exactly like /new.
 			await flushSession(invocation.agent.session);
-			await restartProcess(restartArgs(), next);
-			return { kind: "success", text: `restarting in ${next} mode` };
+			await restartProcess(restartArgs(), parsed.mode);
+			return { kind: "success", text: `restarting in ${parsed.mode} mode${parsed.global ? " (saved as global default)" : ""}` };
 		},
 	});
 	if (process.env.DSH_DEBUG) {
@@ -494,7 +635,7 @@ const boot = async (ctx) => {
 	);
 	// Workspace instructions: inject <cwd>/AGENTS.md so the agent starts every
 	// session knowing this repo's rules (docs-for-agents over tools-for-agents).
-	if (!process.env.DSH_NO_AGENTS) {
+	if (CONFIG.workspaceInstructions) {
 		const agentsPath = join(CWD, "AGENTS.md");
 		if (existsSync(agentsPath)) {
 			const instructions = readFileSync(agentsPath, "utf8").slice(0, AGENTS_MD_CAP).replaceAll("</workspace_instructions>", "<\\/workspace_instructions>");
@@ -514,9 +655,9 @@ const boot = async (ctx) => {
 		process.exit(0);
 	}
 
-	const makeAgent = (model, provider = PROVIDER, id = `cli-${Date.now().toString(36)}`) => {
+	const makeAgent = (model, provider = PROVIDER, id = `cli-${Date.now().toString(36)}`, mode = newSessionMode) => {
 		const created = ctx.agentLoop.create(id, { provider, model }, { cwd: CWD });
-		appendMode(created, currentMode);
+		appendMode(created, mode);
 		return created;
 	};
 
@@ -556,8 +697,10 @@ const boot = async (ctx) => {
 			lineQueue.push(line);
 		}
 	};
-	if (!TTY) {
-		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+	if (!RAW_TTY || RENDERER === "plain") {
+		// terminal mirrors RAW_TTY: plain renderer on a real terminal still
+		// echoes typed characters; piped input stays in canonical line mode.
+		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: RAW_TTY });
 		plainRl.on("line", queueLine);
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
 		// turn that is still streaming.
@@ -599,13 +742,13 @@ const boot = async (ctx) => {
 			// First run: no keys anywhere — interactive provider + key setup.
 			setupInputActive = true;
 			console.log("No API key detected. Configure a provider:");
-			const answer = (await askUser(`provider (${Object.keys(PROVIDER_DEFAULTS).join("/")}) [deepseek-official]: `)).trim() || "deepseek-official";
+			const answer = (await askUser(`provider (${Object.keys(PROVIDER_DEFAULTS).join("/")}) [${currentProvider}]: `)).trim() || currentProvider;
 			if (!PROVIDER_DEFAULTS[answer]) {
 				console.error(`unknown provider "${answer}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})`);
 				process.exit(1);
 			}
 			currentProvider = answer;
-			currentModel = PROVIDER_DEFAULTS[answer].model;
+			currentModel = CONFIG.defaultModel ?? PROVIDER_DEFAULTS[answer].model;
 			const key = (await askUser(`${PROVIDER_DEFAULTS[answer].keyEnv}: `)).trim();
 			if (!key) {
 				console.error("empty API key; set the env var and restart");
@@ -753,7 +896,7 @@ const boot = async (ctx) => {
 		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"}) · mode ${currentMode}`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /sessions  /tools [reload]  /stats  /exit");
+		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /config [key [value]]  /sessions  /tools [reload]  /stats  /exit");
 		console.log("");
 	}
 
@@ -786,6 +929,7 @@ const boot = async (ctx) => {
 					await stopCurrentAgent("user-provider-switch");
 					currentProvider = next;
 					currentModel = PROVIDER_DEFAULTS[next].model;
+					currentMode = newSessionMode;
 					agent = makeAgent(currentModel, currentProvider);
 					if (ui) ui.setStatus(statusLine());
 					else console.log(`(switched to ${next}, new session: ${agent.session.id})`);
@@ -798,6 +942,7 @@ const boot = async (ctx) => {
 			}
 			if (trimmed === "/clear" || trimmed === "/new") {
 				await stopCurrentAgent("user-clear");
+				currentMode = newSessionMode;
 				agent = makeAgent(currentModel, currentProvider);
 				if (ui) ui.setStatus(statusLine());
 				else console.log(`(new session: ${agent.session.id})`);
@@ -825,25 +970,53 @@ const boot = async (ctx) => {
 				else console.log(row);
 				return;
 			}
-			if (trimmed === "/mode") {
-				const row = `mode: ${currentMode} — usage: /mode <${MODES.join("|")}> (new sessions default to minimal)`;
-				if (ui) ui.addToolResult(row, false);
-				else console.log(row);
+			if (trimmed === "/config" || trimmed.startsWith("/config ")) {
+				const result = await handleConfigCommand(trimmed === "/config" ? "" : trimmed.slice(8).trim());
+				if (result.kind === "error") {
+					if (ui) ui.addError(result.text);
+					else console.error(result.text);
+				} else if (ui) ui.addToolResult(result.text, false);
+				else console.log(result.text);
 				return;
 			}
-			if (trimmed.startsWith("/mode ")) {
-				const next = trimmed.slice(6).trim();
-				if (!isValidMode(next)) {
-					const row = `unknown mode "${next}" (known: ${MODES.join(", ")})`;
+			if (trimmed === "/mode" || trimmed.startsWith("/mode ")) {
+				const parsed = parseModeArgs(trimmed === "/mode" ? "" : trimmed.slice(6).trim());
+				if (parsed.error) {
+					if (ui) ui.addError(parsed.error);
+					else console.error(parsed.error);
+					return;
+				}
+				if (!parsed.mode) {
+					const row = `mode: ${currentMode} — usage: /mode <${MODES.join("|")}> [--global] (new sessions default to ${newSessionMode})`;
+					if (ui) ui.addToolResult(row, false);
+					else console.log(row);
+					return;
+				}
+				if (!isValidMode(parsed.mode)) {
+					const row = `unknown mode "${parsed.mode}" (known: ${MODES.join(", ")})`;
 					if (ui) ui.addError(row);
 					else console.error(row);
 					return;
 				}
+				if (parsed.global) {
+					try {
+						saveUserConfig({ defaultMode: parsed.mode });
+						const loaded = reloadConfig();
+						if (loaded.error) throw loaded.error;
+						currentConfig = loaded.config;
+					} catch (error) {
+						const row = `[mode --global] ${error.message}`;
+						if (ui) ui.addError(row);
+						else console.error(row);
+						return;
+					}
+				}
 				await stopCurrentAgent("user-mode-switch");
-				currentMode = next;
+				currentMode = parsed.mode;
+				newSessionMode = parsed.mode;
 				agent = makeAgent(currentModel, currentProvider);
 				if (ui) ui.setStatus(statusLine());
-				else console.log(`(switched to ${next} mode, new session: ${agent.session.id})`);
+				else console.log(`(switched to ${parsed.mode} mode${parsed.global ? ", saved as global default" : ""}, new session: ${agent.session.id})`);
 				return;
 			}
 			if (trimmed === "/resume") {
@@ -901,6 +1074,7 @@ const boot = async (ctx) => {
 				if (next) {
 					await stopCurrentAgent("user-model-switch");
 					currentModel = next;
+					currentMode = newSessionMode;
 					agent = makeAgent(next, currentProvider);
 					if (ui) ui.setStatus(statusLine());
 					else console.log(`(switched to ${next}, new session: ${agent.session.id})`);
@@ -1031,14 +1205,12 @@ mount("goal-round-driver", goalRoundDriverNs);
 mount("plan-mode", planModeNs.PlanModeController, { section: PLAN_MODE_SECTION });
 mount("compaction", compactionNs.BasicCompactionEngine, {
 	auto: true,
-	thresholdRatio: (() => {
-		const ratio = Number(process.env.DSH_COMPACT_RATIO ?? 0.8);
-		return Number.isFinite(ratio) && ratio > 0 && ratio <= 1 ? ratio : 0.8;
-	})(),
+	thresholdRatio: CONFIG.compactionRatio,
 });
-// Titles cost one silent LLM call per session: opt-in via DSH_TITLES, or
-// auto-enabled with the community TUI (its session list expects them).
-if (process.env.DSH_TITLES || USE_CC_TUI) {
+// Titles cost one silent LLM call per session: opt-in via the titles
+// setting/DSH_TITLES, or auto-enabled with the community TUI (its session
+// list expects them).
+if (CONFIG.titles || USE_CC_TUI) {
 	mount("session-title", sessionTitleNs.SessionTitleService);
 	mount("session-title-llm", sessionTitleLlmNs);
 }

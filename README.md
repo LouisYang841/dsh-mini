@@ -65,7 +65,30 @@ dsh-mini
 
 首次运行无密钥会交互询问 provider 并持久化（`~/.dsh-mini/env`）。DeepSeek 默认；`/provider` 切换，`/model` 换型号，`--resume`/`--sessions` 回访会话。
 
-新会话默认 **minimal 模式**：system prompt 固定为官方 Minimal 的完整 persona，模型只看到 `bash` + `str_replace_editor`。用 `--mode standard`、`DSH_MODE=standard` 或会话内 `/mode standard` 切到完整工具目录；模式作为 durable session event 保存，resume 时自动恢复。
+新会话默认 **minimal 模式**：system prompt 固定为官方 Minimal 的完整 persona，模型只看到 `bash` + `str_replace_editor`。用 `--mode standard`、`DSH_MODE=standard` 或会话内 `/mode standard` 切到完整工具目录；模式作为 durable session event 保存，resume 时自动恢复。`/mode standard --global` 会把新默认值写进 `~/.dsh-mini/settings.json`，之后每次启动都生效。
+
+## 持久化配置
+
+两层 JSON 设置（仿 pi 的 settings 契约，去掉 watcher/lockfile 依赖）：
+
+1. `~/.dsh-mini/settings.json` — 用户默认值（首次 `/mode --global` 或 `/config key value` 时以 0600 创建）
+2. `<cwd>/.dsh-mini/settings.json` — 当前项目覆盖值
+
+优先级：**CLI flag > 环境变量 > 项目设置 > 用户设置 > 内置默认值**。支持的字段：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `defaultMode` | `minimal` | 新会话模式（`minimal` / `standard`） |
+| `defaultProvider` | 自动 | 启动默认 provider（如 `deepseek-official`、`google`、`openai`） |
+| `defaultModel` | provider 默认 | 启动默认模型 |
+| `sessionsDir` | `~/.dsh-mini/sessions` | 会话存储目录，支持 `~/...` |
+| `compactionRatio` | `0.8` | 自动压缩触发比例（>0 且 ≤1） |
+| `titles` | `false` | 是否给会话生成标题（静默消耗一次 LLM 调用） |
+| `workspaceInstructions` | `true` | 是否注入工作目录的 `AGENTS.md` |
+| `showBanner` | `true` | 是否显示启动 banner |
+| `renderer` | `auto` | `auto`（默认 cc-tui）/ `cc` / `basic` / `plain` |
+
+会话内 `/config` 查看当前有效值及来源；`/config <key> <value>` 写入用户设置。凭据不进 settings —— API key 只从环境变量或 `~/.dsh-mini/env` 读取。
 
 ## 自定义工具（toolpackages）
 
@@ -144,21 +167,30 @@ node cli/cli.mjs [model]
 - Modes: `minimal` is the default for new sessions (exact Minimal persona +
   `bash`/`str_replace_editor` only); `standard` keeps the full dsh-mini
   catalog. Select via
-  `--mode <id>`, `DSH_MODE`, or `/mode <id>`; the active mode is recorded as
-  a durable session event and restored on resume.
+  `--mode <id>`, `DSH_MODE`, `/mode <id>`, or the `defaultMode` setting;
+  the active mode is recorded as a durable session event and restored on
+  resume. `/mode <id> --global` persists the new default to
+  `~/.dsh-mini/settings.json`.
+- Settings: `~/.dsh-mini/settings.json` (user) merged under
+  `./.dsh-mini/settings.json` (project), then env vars, then CLI flags.
+  Fields: `defaultMode`, `defaultProvider`, `defaultModel`, `sessionsDir`,
+  `compactionRatio`, `titles`, `workspaceInstructions`, `showBanner`,
+  `renderer`. `/config` shows effective values and `/config <key> <value>`
+  saves to the user file. API keys stay out of settings — they live in the
+  environment or `~/.dsh-mini/env`.
 - Toolpackages: `<cwd>/tools` and `~/.dsh-mini/tools` are scanned for
   `*.tool.json` manifests. Each tool runs out-of-process with JSON on
   stdin/stdout; `/tools reload` re-scans without restarting.
-- REPL: `/clear`, `/model <id>`, `/mode [id]`, `/sessions`, `/tools [reload]`,
-  `/exit`; live event rendering from the session firehose; ANSI status bar
-  with live token usage.
+- REPL: `/clear`, `/model <id>`, `/mode [id [--global]]`, `/config [key [value]]`,
+  `/sessions`, `/tools [reload]`, `/exit`; live event rendering from the
+  session firehose; ANSI status bar with live token usage.
 
 Commands:
 ```
 cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 ./run.sh                  # engine conformance (Node + QuickJS, diff vs baseline)
 ./build.sh                # portable engine bundle only
-node cli/cli.mjs [model] [--mode <id>] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
+node cli/cli.mjs [model] [--mode <id>] [--resume <id>] [--sessions]   # settings files + env configure the rest
 ```
 
 **Providers.** DeepSeek is the default (`deepseek-official` route via DSH's own
@@ -172,7 +204,8 @@ light up automatically (plus the pi-ai `deepseek` route). Switch with
 provider, paste the key — it is persisted to `~/.dsh-mini/env` (fallback
 `./.env`, both gitignored) and loaded automatically on the next start.
 **Workspace instructions**: if the working directory contains an `AGENTS.md`,
-it is injected into the system prompt (`DSH_NO_AGENTS=1` disables).
+it is injected into the system prompt (`DSH_NO_AGENTS=1` or
+`workspaceInstructions: false` disables).
 
 Architecture (engine/host seams, retrofit recipe, upgrade policy):
 `ARCHITECTURE.md`. Pitfalls and host-integration checklist:

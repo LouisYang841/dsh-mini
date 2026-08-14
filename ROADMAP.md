@@ -21,7 +21,14 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
   official Minimal persona, tools `bash`/`str_replace_editor` only);
   `standard` keeps the full catalog. `--mode`/`DSH_MODE`/`/mode` switch; the
   active mode is a durable session event so resume restores it, while legacy
-  sessions fall back to `standard`.
+  sessions fall back to `standard`. `/mode <id> --global` persists the new
+  default.
+- [x] **Persistent settings**: pi-style JSON config
+  (`~/.dsh-mini/settings.json` user + `./.dsh-mini/settings.json` project,
+  env then CLI overrides) for mode/provider/model/sessions/compaction/titles/
+  AGENTS injection/banner/renderer. `/config` shows effective values and
+  saves changes; DSH official's YAML+chokidar watcher was intentionally not
+  ported (zero-runtime-dep rule).
 - [x] **Plan-mode mount fixed**: `exit_plan_mode` is now actually registered
   (the plan-mode plugin requires its `section` config).
 - [x] **Out-of-process toolpackages**: `<cwd>/tools` + `~/.dsh-mini/tools`
