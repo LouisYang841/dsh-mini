@@ -13,6 +13,9 @@ ALIAS_FLAG=""
 if [ -f vendor/node_modules/@earendil-works/pi-tui/dist/index.js ]; then
   ALIAS_FLAG="--alias:@earendil-works/pi-tui=./vendor/node_modules/@earendil-works/pi-tui/dist/index.js"
 fi
+if [ -f vendor/node_modules/@openguardrails/dsh-tui/lib/index.js ]; then
+  ALIAS_FLAG="$ALIAS_FLAG --alias:@openguardrails/dsh-tui=./vendor/node_modules/@openguardrails/dsh-tui/lib/index.js --alias:@openguardrails/dsh-tui/prompt=./vendor/node_modules/@openguardrails/dsh-tui/lib/prompt.js"
+fi
 $ESBUILD cli/cli.js \
   $ALIAS_FLAG \
   --bundle \

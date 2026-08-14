@@ -13,6 +13,20 @@ import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import * as deepseekLlm from "@deepseek-ai/dsh-llm-deepseek";
+import * as commandsNs from "@deepseek-ai/dsh-commands";
+import * as userQuestionsNs from "@deepseek-ai/dsh-user-questions";
+import * as tokenMeterNs from "@deepseek-ai/dsh-token-meter";
+import * as toolAskUserNs from "@deepseek-ai/dsh-tool-ask-user";
+import * as ccTuiNs from "@openguardrails/dsh-tui";
+import * as ccTuiPromptNs from "@openguardrails/dsh-tui/prompt";
+import * as skillNs from "@deepseek-ai/dsh-skill";
+import * as sessionRefNs from "@deepseek-ai/dsh-session-reference";
+import * as sessionQueryNs from "@deepseek-ai/dsh-session-query-sqlite";
+import * as projectionNs from "@deepseek-ai/dsh-session-projection";
+import * as projectionCacheNs from "@deepseek-ai/dsh-session-projection-cache";
+import * as storageNs from "@deepseek-ai/dsh-storage";
+import * as storageJsonNs from "@deepseek-ai/dsh-storage-json";
+import * as storageDomainNs from "@deepseek-ai/dsh-storage-domain";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
 import { createTuiHost } from "./tui-renderer.js";
@@ -122,19 +136,16 @@ const boot = async (ctx) => {
 		process.exit(0);
 	}
 
-	const makeAgent = (model, provider = PROVIDER) => {
-		return ctx.agentLoop.create(
-			`cli-${Date.now().toString(36)}`,
-			{ provider, model },
-			{ cwd: CWD },
-		);
+	const makeAgent = (model, provider = PROVIDER, id = `cli-${Date.now().toString(36)}`) => {
+		return ctx.agentLoop.create(id, { provider, model }, { cwd: CWD });
 	};
 
 	let agent = null;
 	let busy = false;
 
 	// ---- renderer first: interactive setup needs it before the agent exists ----
-	const ui = TTY
+	const USE_CC_TUI = TTY && !!process.env.DSH_CC_TUI;
+	const ui = TTY && !USE_CC_TUI
 		? createTuiHost({
 				onLine: (line) => void handleLine(line),
 				onInterrupt: () => {
@@ -145,12 +156,13 @@ const boot = async (ctx) => {
 
 	let plainRl = null;
 	let stdinClosed = false;
+	let plainInputActive = false;
 	// Piped stdin delivers whole chunks at once, so rl.question misses lines
 	// that arrive before the next question is registered. A persistent
 	// listener + queue fixes it: early lines queue, askUser drains the queue.
 	let lineQueue = [];
 	let lineResolver = null;
-	if (!ui) {
+	if (!TTY) {
 		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
 		plainRl.on("line", (line) => {
 			if (lineResolver) {
@@ -164,13 +176,13 @@ const boot = async (ctx) => {
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
 		// turn that is still streaming.
 		plainRl.on("close", () => {
+			if (!plainInputActive) return;
 			stdinClosed = true;
 			if (!busy) process.exit(0);
 		});
 	}
 	const askUser = (question) => {
 		process.stdout.write(question);
-		if (ui) return ui.ask(question);
 		return new Promise((resolve) => {
 			if (lineQueue.length > 0) resolve(lineQueue.shift());
 			else lineResolver = resolve;
@@ -204,6 +216,45 @@ const boot = async (ctx) => {
 	}
 
 	let usage = undefined;
+
+	// TTY mode with DSH_CC_TUI=1: mount the pi-tui-based
+	// @openguardrails/dsh-tui BEFORE the agent exists so its agent/created
+	// listener is armed, then create the agent it watches. EXPERIMENTAL:
+	// the UI mounts and renders, but piped-input submission is unverified —
+	// test interactively on a real terminal.
+	if (USE_CC_TUI) {
+		if (plainRl) {
+			plainInputActive = false;
+			plainRl.close();
+			plainRl = null;
+		}
+		const tuiSessionId = RESUME_ID ?? "main";
+		ctx.plugin(ccTuiNs, { sessionId: tuiSessionId }).then(
+			() => {},
+			(err) => {
+				console.error("[cc-tui] mount FAILED:", err?.stack ?? String(err));
+				process.exit(1);
+			},
+		);
+		if (RESUME_ID) {
+			try {
+				const published = await Promise.race([
+					ctx.agentLoop.resume(ctx, {
+						resumeSessionId: RESUME_ID,
+						agentOptions: { provider: currentProvider, model: currentModel },
+					}),
+					new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
+				]);
+				agent = published.agent;
+			} catch (err) {
+				console.error("[resume] FAILED:", err?.stack ?? String(err));
+				process.exit(1);
+			}
+		} else {
+			agent = makeAgent(currentModel, currentProvider, "main");
+		}
+		return;
+	}
 
 	if (RESUME_ID) {
 		try {
@@ -392,6 +443,7 @@ const boot = async (ctx) => {
 
 	// ---- plain-mode REPL (pi-tui drives its own input) ----
 
+	plainInputActive = true;
 	if (!ui) {
 		const ask = async () => {
 			for (;;) {
@@ -418,6 +470,19 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("llm-deepseek", deepseekLlm);
+mount("commands", commandsNs.CommandRuntime);
+mount("user-questions", userQuestionsNs.UserQuestionService);
+mount("token-meter", tokenMeterNs.TokenMeter);
+mount("tool-ask-user", toolAskUserNs);
+mount("skills", skillNs.SkillRegistry);
+mount("session-reference", sessionRefNs.default);
+mount("session-query", sessionQueryNs.default);
+mount("session-projection", projectionNs.SessionProjectionRegistry);
+mount("session-projection-cache", projectionCacheNs.SessionProjectionCache);
+mount("storage", storageNs.Storage);
+mount("storage-json", storageJsonNs);
+mount("storage-domain", storageDomainNs);
+mount("tui-prompt", ccTuiPromptNs.TuiPromptService);
 mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);
