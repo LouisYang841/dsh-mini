@@ -144,6 +144,22 @@ byte-for-byte. Rules:
   returns `{ agent, dispose }`; it reads `sessionPersistence` via
   `ctx.get("sessionPersistence")` from the AgentLoop's own context.
 
+## pi-tui shell integration (cli/tui-renderer.js)
+
+- Layout: `TruncatedText` status bar + `ScrollView(primary, follow:"end")`
+  wrapping a `VStack` of `Text` lines + `Input` for the prompt.
+  `tui.addInputListener` + `matchesKey(data, "ctrl+c")` for exit/interrupt.
+- `VStack` is a Container: append lines with `lines.addChild(new Text(...))`;
+  stream deltas by buffering and `setText` on the current assistant Text.
+- **TDZ trap**: the host is constructed BEFORE the shared `handleLine` is
+  declared — `const handleLine` referenced from an onSubmit callback throws
+  "Cannot access before initialization" on the FIRST keystroke. Declare
+  shared handlers as hoisted `function` declarations.
+- pi-tui vendors cleanly: `@earendil-works/pi-tui` + `get-east-asian-width`
+  + `marked` tarballs under `vendor/node_modules`, entry aliased in the
+  build (`--alias:@earendil-works/pi-tui=./vendor/.../dist/index.js`); CI
+  gets the same packages from npm.
+
 ## Adding a new host (checklist)
 
 1. Copy the boot-plugin pattern from `main.js`/`cli/cli.js` (inject list:

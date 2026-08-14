@@ -1,7 +1,6 @@
 // dsh-mini: an interactive coding-agent CLI.
-// The pi-CLI idea in minimal form: pi's shell conventions (TUI, sessions
-// directory, resume UX) + DSH's engine AND state (AgentLoop, ToolRuntime,
-// event-sourced sessions with the DSH JSONL persistence backend).
+// pi's shell (the real @earendil-works/pi-tui framework) + DSH's engine AND
+// state (AgentLoop, ToolRuntime, event-sourced sessions, JSONL persistence).
 import "../polyfills.js";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
@@ -15,6 +14,7 @@ import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { NodeFs } from "./node-fs.js";
+import { createTuiHost } from "./tui-renderer.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -22,12 +22,11 @@ import { homedir } from "node:os";
 const API_KEY = process.env.GEMINI_API_KEY ?? "GEMINI_API_KEY_REDACTED";
 const CWD = process.cwd();
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
-// ANSI TUI when both stdio ends are terminals (pipes/CI get plain mode).
+// pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
 const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
 
 // CLI args: node cli.mjs [model] [--resume <id>] [--sessions]
 const ARGS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const FLAGS = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith("--")).map((a) => [a, true]));
 const RESUME_INDEX = process.argv.indexOf("--resume");
 const RESUME_ID = RESUME_INDEX >= 0 ? process.argv[RESUME_INDEX + 1] : undefined;
 const LIST_SESSIONS = process.argv.includes("--sessions");
@@ -41,59 +40,7 @@ const PERSONA = [
 	"Keep replies concise and use the language the user writes in.",
 ].join(" ");
 
-// ---- terminal rendering ----
-
-const out = (s) => process.stdout.write(s);
-
-function renderEvent(event, ui) {
-	const d = event.data ?? {};
-	switch (event.type) {
-		case "assistant/chunk": {
-			const c = d.chunk;
-			if (c.type === "text-delta") out(c.text);
-			break;
-		}
-		case "tool/call":
-			out(`\n⚙ ${d.name} ${d.arguments}\n`);
-			break;
-		case "tool/result": {
-			const result = d.message?.content?.[0];
-			const blocks = result?.content ?? [];
-			const text = blocks
-				.filter((b) => b.type === "text")
-				.map((b) => b.text)
-				.join("\n")
-				.slice(0, 240);
-			out(`${result?.isError ? "✗" : "✓"} ${text}\n`);
-			break;
-		}
-		case "assistant/message": {
-			if (d.usage) ui?.setUsage(d.usage);
-			out("\n");
-			break;
-		}
-		case "turn/end":
-			if (d.reason?.kind === "error") {
-				out(`\n[error] ${JSON.stringify(d.reason.error ?? {})}\n`);
-			}
-			break;
-	}
-}
-
-function makeStatusBar({ getModel, getUsage }) {
-	let last = "";
-	const draw = () => {
-		const usage = getUsage();
-		const line = `dsh-mini · ${getModel()} · ${CWD}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
-		if (line === last) return;
-		last = line;
-		// save cursor → top line → clear → draw → restore
-		out(`\x1b[s\x1b[H\x1b[2K${line}\x1b[u`);
-	};
-	return { draw };
-}
-
-// ---- boot + REPL ----
+// ---- boot ----
 
 process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection:", r?.stack ?? String(r)));
 
@@ -128,16 +75,137 @@ const boot = async (ctx) => {
 				new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
 			]);
 			agent = published.agent;
-			console.log(`(resumed ${RESUME_ID})`);
 		} catch (err) {
 			console.error("[resume] FAILED:", err?.stack ?? String(err));
-			throw err;
+			process.exit(1);
 		}
 	} else {
 		agent = makeAgent(currentModel);
 	}
+
 	let usage = undefined;
-	const status = TTY ? makeStatusBar({ getModel: () => currentModel, getUsage: () => usage }) : { draw() {} };
+	let busy = false;
+
+	const statusLine = () =>
+		`dsh-mini · ${currentModel} · ${agent.session.id}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
+
+	// ---- renderer: pi-tui shell or plain terminal ----
+
+	const ui = TTY
+		? createTuiHost({
+				onLine: (line) => void handleLine(line),
+				onInterrupt: () => {
+					if (busy) agent.cancel({ kind: "user-interrupt" });
+				},
+			})
+		: null;
+
+	if (ui) {
+		ui.setStatus(statusLine());
+	} else {
+		console.log(`dsh-mini — DSH core + ${MODEL} @ Google AI Studio`);
+		console.log(`workspace: ${CWD}`);
+		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
+		console.log("commands: /clear  /model <id>  /sessions  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
+		console.log("");
+	}
+
+	// ---- shared input handling ----
+
+	async function handleLine(line) {
+		const trimmed = line.trim();
+		try {
+			if (trimmed === "/exit" || trimmed === "/quit") {
+				process.exit(0);
+			}
+			if (trimmed === "") return;
+			if (trimmed === "/clear") {
+				agent.cancel({ kind: "user-clear" });
+				agent = makeAgent(currentModel);
+				if (ui) ui.setStatus(statusLine());
+				else console.log(`(new session: ${agent.session.id})`);
+				return;
+			}
+			if (trimmed === "/sessions") {
+				const headers = await ctx.sessionPersistence.list();
+				for (const header of headers) {
+					const row = `${header.id}\t${header.cwd ?? ""}\t${header.createdAt ?? ""}\t${header.eventCount ?? ""}`;
+					if (ui) ui.addToolResult(row, false);
+					else console.log(row);
+				}
+				return;
+			}
+			if (trimmed.startsWith("/model ")) {
+				const next = trimmed.slice(7).trim();
+				if (next) {
+					agent.cancel({ kind: "user-model-switch" });
+					currentModel = next;
+					agent = makeAgent(next);
+					if (ui) ui.setStatus(statusLine());
+					else console.log(`(switched to ${next}, new session: ${agent.session.id})`);
+				}
+				return;
+			}
+			busy = true;
+			ui?.setBusy(true);
+			agent.followup(createUserMessage({ content: [{ type: "text", text: trimmed }], source: { kind: "user" } }));
+			await agent.whenIdle();
+		} catch (error) {
+			console.error("CLI error:", error?.stack ?? String(error));
+		} finally {
+			busy = false;
+			ui?.setBusy(false);
+			ui?.focus();
+		}
+	};
+
+	// ---- session event projection ----
+
+	const renderEvent = (event) => {
+		const d = event.data ?? {};
+		switch (event.type) {
+			case "assistant/chunk": {
+				const c = d.chunk;
+				if (c.type === "text-delta") {
+					if (ui) ui.appendAssistant(c.text);
+					else process.stdout.write(c.text);
+				}
+				break;
+			}
+			case "tool/call":
+				if (ui) ui.addTool(`${d.name} ${d.arguments}`);
+				else process.stdout.write(`\n⚙ ${d.name} ${d.arguments}\n`);
+				break;
+			case "tool/result": {
+				const result = d.message?.content?.[0];
+				const blocks = result?.content ?? [];
+				const text = blocks
+					.filter((b) => b.type === "text")
+					.map((b) => b.text)
+					.join("\n")
+					.slice(0, 240);
+				if (ui) ui.addToolResult(text, !!result?.isError);
+				else process.stdout.write(`${result?.isError ? "✗" : "✓"} ${text}\n`);
+				break;
+			}
+			case "assistant/message": {
+				if (d.usage) {
+					usage = d.usage;
+					if (ui) ui.setStatus(statusLine());
+				}
+				if (ui) ui.endAssistant();
+				else process.stdout.write("\n");
+				break;
+			}
+			case "turn/end":
+				if (d.reason?.kind === "error") {
+					const text = JSON.stringify(d.reason.error ?? {});
+					if (ui) ui.addError(text);
+					else process.stdout.write(`\n[error] ${text}\n`);
+				}
+				break;
+		}
+	};
 
 	ctx.on("session/event", (subject, event) => {
 		if (subject !== agent.session) return;
@@ -145,70 +213,26 @@ const boot = async (ctx) => {
 			console.error("[debug] header.tools:", JSON.stringify(event.data?.header?.tools ?? null).slice(0, 300));
 		}
 		try {
-			renderEvent(event, { setUsage: (u) => (usage = u) });
+			renderEvent(event);
 		} catch {
 			// rendering must never break the loop
 		}
-		status.draw();
 	});
 
-	const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: TTY });
-	rl.on("close", () => process.exit(0));
+	// ---- plain-mode REPL (pi-tui drives its own input) ----
 
-	out("\n");
-	console.log(`dsh-mini — DSH core + ${MODEL} @ Google AI Studio`);
-	console.log(`workspace: ${CWD}`);
-	console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-	console.log("commands: /clear  /model <id>  /sessions  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
-	console.log("");
-	status.draw();
-
-	const ask = () => {
-		rl.question("you> ", async (line) => {
-			const trimmed = line.trim();
-			try {
-				if (trimmed === "/exit" || trimmed === "/quit") {
-					rl.close();
-					process.exit(0);
-				}
-				if (trimmed === "") return ask();
-				if (trimmed === "/clear") {
-					agent.cancel({ kind: "user-clear" });
-					agent = makeAgent(currentModel);
-					console.log(`(new session: ${agent.session.id})`);
-					status.draw();
-					return ask();
-				}
-				if (trimmed === "/sessions") {
-					const headers = await ctx.sessionPersistence.list();
-					for (const header of headers) {
-						console.log(`${header.id}\t${header.cwd ?? ""}\t${header.createdAt ?? ""}\t${header.eventCount ?? ""}`);
-					}
-					return ask();
-				}
-				if (trimmed.startsWith("/model ")) {
-					const next = trimmed.slice(7).trim();
-					if (next) {
-						agent.cancel({ kind: "user-model-switch" });
-						currentModel = next;
-						agent = makeAgent(next);
-						console.log(`(switched to ${next}, new session: ${agent.session.id})`);
-						status.draw();
-					}
-					return ask();
-				}
-				agent.followup(createUserMessage({ content: [{ type: "text", text: trimmed }], source: { kind: "user" } }));
-				await agent.whenIdle();
-				status.draw();
-				out("\n");
+	if (!ui) {
+		const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+		rl.on("close", () => process.exit(0));
+		const ask = () => {
+			rl.question("you> ", async (line) => {
+				await handleLine(line);
+				process.stdout.write("\n");
 				ask();
-			} catch (error) {
-				console.error("CLI error:", error?.stack ?? String(error));
-				ask();
-			}
-		});
-	};
-	ask();
+			});
+		};
+		ask();
+	}
 };
 boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence"];
 

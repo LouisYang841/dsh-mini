@@ -9,7 +9,12 @@ if [ -z "$ESBUILD" ]; then
   elif [ -x /home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild ]; then ESBUILD="/home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild"
   else echo "esbuild not found: install it or set ESBUILD"; exit 1; fi
 fi
+ALIAS_FLAG=""
+if [ -f vendor/node_modules/@earendil-works/pi-tui/dist/index.js ]; then
+  ALIAS_FLAG="--alias:@earendil-works/pi-tui=./vendor/node_modules/@earendil-works/pi-tui/dist/index.js"
+fi
 $ESBUILD cli/cli.js \
+  $ALIAS_FLAG \
   --bundle \
   --format=esm \
   --platform=node \

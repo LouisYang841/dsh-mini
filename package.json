@@ -28,7 +28,10 @@
     "@deepseek-ai/dsh-tool-todo": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-persistence": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-session-persistence": "0.1.0-rc.6",
+    "@earendil-works/pi-tui": "0.84.1",
+    "get-east-asian-width": "1.6.0",
+    "marked": "18.0.5"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

@@ -70,7 +70,7 @@ Architecture (engine/host seams, retrofit recipe, upgrade policy):
 
 ## Roadmap
 
-- [ ] pi-tui shell (the real `@earendil-works/pi-tui` framework; event → component bridge)
+- [x] pi-tui shell (the real `@earendil-works/pi-tui` framework; session events → components)
 - [ ] Session stats + compaction on resume
 - [ ] Bash tool + sandbox policy for the Node profile
 - [ ] Operit QuickJS host bridge (long-lived event loop + JNI bridge)
