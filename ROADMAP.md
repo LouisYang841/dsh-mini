@@ -42,10 +42,11 @@ provider SDKs (the portable engine bundle is unaffected at 419KB).
 
 ## P2 — DSH pulls, all pure packages
 
-- **Skills**: `dsh-skill` (registry, pure) + `dsh-tool-skill` (loader tool,
-  pure) + a minimal self-written scanner for `skills/**/SKILL.md` (avoid
-  `dsh-skill-filesystem`'s chokidar + yaml). MEDIUM — only when there are
-  enough skills to matter; the engine skill lives in this repo already.
+- [x] **Skills**: `dsh-skill` registry + `dsh-tool-skill` loader tool (both
+  pure) + our ~100-line filesystem scanner (`cli/skill-scanner.js`; rejects
+  `dsh-skill-filesystem`'s chokidar + yaml). Roots: `<cwd>/skills` +
+  `~/.dsh-mini/skills`; replay-verified load of the embedded
+  `dsh-core-embedding` skill.
 - **Compaction**: `dsh-compaction` + `dsh-compaction-basic` + `dsh-token-meter`
   (all pure; trigger wiring is the open question). MEDIUM — defer until
   sessions actually exceed context; /stats already exposes the pressure.

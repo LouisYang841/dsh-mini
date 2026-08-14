@@ -18,6 +18,8 @@ import * as userQuestionsNs from "@deepseek-ai/dsh-user-questions";
 import * as tokenMeterNs from "@deepseek-ai/dsh-token-meter";
 import * as toolAskUserNs from "@deepseek-ai/dsh-tool-ask-user";
 import * as piAiNs from "@deepseek-ai/dsh-llm-pi-ai";
+import * as toolSkillNs from "@deepseek-ai/dsh-tool-skill";
+import { defineFilesystemSkillProvider } from "./skill-scanner.js";
 import * as ccTuiNs from "@openguardrails/dsh-tui";
 import * as ccTuiPromptNs from "@openguardrails/dsh-tui/prompt";
 import * as skillNs from "@deepseek-ai/dsh-skill";
@@ -123,6 +125,9 @@ const boot = async (ctx) => {
 	}
 	ctx.tools.register(defineBashTool());
 	ctx.systemPrompt.section(bashGuidanceSection());
+	ctx.skills.registerProvider(() =>
+		defineFilesystemSkillProvider([join(CWD, "skills"), join(homedir(), ".dsh-mini", "skills")]),
+	);
 	// Workspace instructions: inject <cwd>/AGENTS.md so the agent starts every
 	// session knowing this repo's rules (docs-for-agents over tools-for-agents).
 	if (!process.env.DSH_NO_AGENTS) {
@@ -464,7 +469,7 @@ const boot = async (ctx) => {
 		void ask();
 	}
 };
-boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence"];
+boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence", "skills"];
 
 const root = new Context();
 const mount = (label, plugin, config) => {
@@ -500,6 +505,7 @@ mount("storage", storageNs.Storage);
 mount("storage-json", storageJsonNs);
 mount("storage-domain", storageDomainNs);
 mount("tui-prompt", ccTuiPromptNs.TuiPromptService);
+mount("tool-skill", toolSkillNs);
 mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);

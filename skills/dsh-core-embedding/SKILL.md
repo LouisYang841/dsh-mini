@@ -223,6 +223,20 @@ byte-for-byte. Rules:
 - Two DeepSeek routes coexist: `deepseek-official` (dsh-llm-deepseek,
   direct) and `deepseek` (pi-ai) — distinct route strings, no adapter clash.
 
+## Skills welding (cli/skill-scanner.js)
+
+- The DSH registry/tool pair is pure and mounts directly; the OFFICIAL
+  scanner (dsh-skill-filesystem) is the big head (chokidar + yaml) — the mini
+  scanner implements the same provider contract: `list()` returns candidates
+  {name (kebab), description, whenToUse?, invocation, source, provider, rank,
+  locator, path}; `get(candidate)` returns the definition with the markdown
+  body. Frontmatter parsing is yaml-LITE (scalar key: value lines only) —
+  fine for name/description/whenToUse.
+- `dsh-tool-skill` injects agents/tools/skills and registers the model-facing
+  `skill` tool; calling it with a name renders `<skill_content>` blocks.
+- Skill roots: `<cwd>/skills` + `~/.dsh-mini/skills`; `<name>/SKILL.md` or
+  `<name>.md`.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is
