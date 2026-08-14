@@ -46,6 +46,19 @@ provider SDKs (the portable engine bundle is unaffected at 419KB).
 - **Editor component** for multiline prompts (pi-tui `Editor`).
 - All three are pure wiring — the components exist in the vendored package.
 
+## Done — DSH web-parity core
+
+- [x] **Goals**: dsh-goal + dsh-tool-goal + dsh-goal-round-driver (all pure) —
+  create_goal/update_goal/get_goal tools, same-session auto round
+  continuation (replay-verified: 2 rounds then round-limit block);
+  `/goal` command shows objective/phase/rounds.
+- [x] **Plan mode**: dsh-plan-mode (pure) — the community TUI renders plan
+  review dialogs.
+- [x] **Todo panel**: the community TUI's standing Plan panel (todo/write
+  events) capped at the 3 most recent non-completed items (+ dim counter) —
+  deterministic vendor patch via patches/apply-dsh-tui-patches.py so CI
+  artifacts match local releases.
+
 ## P2 — DSH pulls, all pure packages
 
 - [x] **Skills**: `dsh-skill` registry + `dsh-tool-skill` loader tool (both

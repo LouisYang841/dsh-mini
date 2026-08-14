@@ -16,6 +16,15 @@ fi
 if [ -f vendor/node_modules/@openguardrails/dsh-tui/lib/index.js ]; then
   ALIAS_FLAG="$ALIAS_FLAG --alias:@openguardrails/dsh-tui=./vendor/node_modules/@openguardrails/dsh-tui/lib/index.js --alias:@openguardrails/dsh-tui/prompt=./vendor/node_modules/@openguardrails/dsh-tui/lib/prompt.js"
 fi
+# Deterministic cosmetic patches on whichever dsh-tui copy esbuild bundles
+# (local vendor/ or CI's npm install) — keeps CI artifacts == local releases.
+if [ -f vendor/node_modules/@openguardrails/dsh-tui/lib/index.js ]; then
+  TUI_LIB="vendor/node_modules/@openguardrails/dsh-tui/lib/index.js"
+else
+  TUI_LIB="$(dirname "$(node -e "console.log(require.resolve('@openguardrails/dsh-tui'))" 2>/dev/null || echo node_modules/@openguardrails/dsh-tui/lib/index.js)")/index.js"
+fi
+[ -f "$TUI_LIB" ] && python3 patches/apply-dsh-tui-patches.py "$TUI_LIB"
+
 $ESBUILD cli/cli.js \
   $ALIAS_FLAG \
   --alias:node:module=./shims/module.js \

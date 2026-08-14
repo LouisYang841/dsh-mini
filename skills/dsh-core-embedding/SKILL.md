@@ -298,6 +298,16 @@ byte-for-byte. Rules:
   are `session.jsonl.zstd` inside per-session directories
   (`root/--cwd--/<id>/`); zstd works on Node 25.
 
+## Vendor patch delivery (deterministic builds)
+
+- Vendor cosmetic patches (accent blue, todo cap) must be applied by the
+  BUILD (patches/apply-dsh-tui-patches.py, wired into cli-build.sh) against
+  whichever copy esbuild bundles — local vendor/ or CI's npm install.
+  Patching only the local vendor copy silently diverges CI artifacts from
+  releases. Detection is marker-based, idempotent.
+- Patch policy: cosmetic, config-less presentation changes ONLY — never
+  logic (skill rule).
+
 ## cc-tui palette patch (vendor override policy)
 
 - The community TUI's accent was SGR 95 (bright magenta) — visually harsh and

@@ -23,6 +23,10 @@ import { defineFilesystemSkillProvider } from "./skill-scanner.js";
 import * as compactionNs from "@deepseek-ai/dsh-compaction-basic";
 import * as sessionTitleNs from "@deepseek-ai/dsh-session-title";
 import * as sessionTitleLlmNs from "@deepseek-ai/dsh-session-title-first-prompt-llm";
+import * as goalNs from "@deepseek-ai/dsh-goal";
+import * as toolGoalNs from "@deepseek-ai/dsh-tool-goal";
+import * as goalRoundDriverNs from "@deepseek-ai/dsh-goal-round-driver";
+import * as planModeNs from "@deepseek-ai/dsh-plan-mode";
 import * as ccTuiNs from "@openguardrails/dsh-tui";
 import * as ccTuiPromptNs from "@openguardrails/dsh-tui/prompt";
 import * as skillNs from "@deepseek-ai/dsh-skill";
@@ -130,6 +134,17 @@ const boot = async (ctx) => {
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
 	// /new: available in every renderer. In the community TUI it restarts the
 	// process with a fresh session id; plain mode handles it in handleLine.
+	ctx.commands.register({
+		name: "goal",
+		description: "Show the active same-session goal (objective, phase, rounds)",
+		handler: async () => {
+			const goal = agent ? ctx.goals.get(agent) : void 0;
+			const text = goal
+				? `goal: ${goal.objective} (${goal.phase}, round ${goal.roundsStarted ?? 0}/${goal.maxGoalRounds ?? "?"})`
+				: "no active goal";
+			return { kind: "success", text };
+		},
+	});
 	ctx.commands.register({
 		name: "new",
 		description: "Start a fresh session (restarts with a new session id)",
@@ -411,6 +426,15 @@ const boot = async (ctx) => {
 				else console.log(row);
 				return;
 			}
+			if (trimmed === "/goal") {
+				const goal = agent ? ctx.goals.get(agent) : void 0;
+				const row = goal
+					? `goal: ${goal.objective} (${goal.phase}, round ${goal.roundsStarted ?? 0}/${goal.maxGoalRounds ?? "?"})`
+					: "no active goal";
+				if (ui) ui.addToolResult(row, false);
+				else console.log(row);
+				return;
+			}
 			if (trimmed === "/resume") {
 				const headers = await ctx.sessionPersistence.list();
 				for (const header of headers) {
@@ -560,7 +584,7 @@ const boot = async (ctx) => {
 		void ask();
 	}
 };
-boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence", "skills", "commands"];
+boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence", "skills", "commands", "goals"];
 
 const root = new Context();
 const mount = (label, plugin, config) => {
@@ -597,6 +621,10 @@ mount("storage-json", storageJsonNs);
 mount("storage-domain", storageDomainNs);
 mount("tui-prompt", ccTuiPromptNs.TuiPromptService);
 mount("tool-skill", toolSkillNs);
+mount("goals", goalNs.GoalService);
+mount("tool-goal", toolGoalNs);
+mount("goal-round-driver", goalRoundDriverNs);
+mount("plan-mode", planModeNs.PlanModeController);
 mount("compaction", compactionNs.BasicCompactionEngine, {
 	auto: true,
 	thresholdRatio: Number(process.env.DSH_COMPACT_RATIO ?? 0.8),
