@@ -3,8 +3,14 @@
 Sourcing order (see AGENTS.md): **pi-native → DSH minimal → self-written glue**.
 Terminal-first: if the bash tool already covers it, it is not a feature.
 
+Sourcing criterion (ADR-0002 in `DECISIONS.md`): cut big heads, keep small
+heads — pull official packages whose native deps are platform-lazy; reject
+chokidar/node-pty/landlock/ripgrep and write seam glue instead.
+
 ## Done
 
+- [x] Official `dsh-fs-local` backend replaces the hand-written NodeFs
+  (koffi is Windows-lazy; replay-verified write/edit/read, 0 errors)
 - [x] DeepSeek default provider (DSH's `dsh-llm-deepseek`, route
   `deepseek-official`, `deepseek-v4-flash`); Gemini stays via the reference
   adapter; `/provider` switch; first-run interactive key setup with

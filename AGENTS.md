@@ -19,9 +19,12 @@ Feature priorities: `ROADMAP.md`.
    fit a seam. Vendor verbatim into `vendor-pi/` with an MIT attribution
    header; adapt import paths only. Reimplement platform glue only when the
    original file drags in entangled imports (pi-tui/typebox/config).
-2. **DSH minimal**: otherwise pull `@deepseek-ai/dsh-*` packages, preferring
-   pure ones (check `package.json` deps first; `@vscode/ripgrep`, `chokidar`,
-   MCP SDK = heavy). Mount/implement a seam instead of pulling a stack.
+2. **DSH minimal**: otherwise pull `@deepseek-ai/dsh-*` packages using the
+   cut-big-keep-small criterion (ADR-0002 in `DECISIONS.md`): ADOPT small
+   heads (pure JS, or native deps that are platform-lazy dynamic imports —
+   koffi in dsh-fs-local/persistence is Windows-only); REJECT big heads
+   (chokidar, node-pty, landlock, `@vscode/ripgrep`, MCP SDK, top-level
+   koffi) and self-write the seam glue instead.
 3. **Self-write last**: small glue files are fine; never reimplement engine
    semantics.
 

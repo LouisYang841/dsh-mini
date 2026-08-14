@@ -197,6 +197,19 @@ byte-for-byte. Rules:
   `DSH_DEBUG=1` + grep for the section marker in stderr — the debug print is
   MULTILINE, so `grep "header.system"` alone only shows the first line.
 
+## Cut-big-keep-small findings
+
+- **koffi is platform-lazy in BOTH official backends**: dsh-fs-local and
+  dsh-session-persistence-jsonl only `await import("koffi")` inside the
+  Windows ACL branch (advapi32/kernel32). On Linux/Termux they are
+  effectively pure — mount them; mark `--external:koffi` when bundling.
+- **dsh-credentials-local is the big head, not the service**: the
+  credentials SERVICE is pure, but its only store backend drags chokidar +
+  yaml — keep the 80-line env loader instead.
+- Official dsh-fs-local returns the write/edit DTOs exactly as dsh-tool-fs
+  expects (atomic rename, stale-version checks, diff bases) — mounting it
+  removes a whole class of hand-replicated DTO bugs.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is

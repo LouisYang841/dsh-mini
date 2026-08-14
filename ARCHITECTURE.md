@@ -31,9 +31,11 @@ into the engine through five narrow seams.
    adapter)`. `gemini-adapter.js` is the reference (SSE streaming, thinking
    signatures, role merging). Any provider, local model, or mock fits here.
 2. **Filesystem service** — implement the `fs` contract (resolve/stat/
-   readText/streamText/readBytes/writeText/editText/listDir). `node-fs.js` is
-   the reference; an Android host implements the same contract over SAF, a
-   remote host over SFTP, without touching `dsh-tool-fs`.
+   readText/streamText/readBytes/writeText/editText/listDir). The Node CLI
+   mounts the official `dsh-fs-local` (its koffi dependency is a Windows-only
+   lazy import — pure on Linux/Termux); `node-fs.js` is the contract
+   reference for NON-Node hosts (Android SAF, remote SFTP) and is no longer
+   mounted in the CLI.
 3. **Persistence backend** — mount any `sessionPersistence` implementation
    (JSONL here; write your own store for your host). The engine only consumes
    `prepare/load/list`. Sessions are keyed by id + cwd.

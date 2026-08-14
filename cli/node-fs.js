@@ -1,5 +1,8 @@
-// Minimal node:fs-backed implementation of the dsh "fs" service contract,
-// used by the dsh-tool-fs tools (read/write/edit/list). Node build only.
+// REFERENCE implementation of the dsh "fs" service contract (seam ②).
+// The Node CLI mounts the official @deepseek-ai/dsh-fs-local backend instead
+// (koffi is a Windows-only lazy import there, so it is pure on Linux/Termux);
+// this file stays as the contract reference for NON-Node hosts (Android SAF,
+// remote SFTP, ...). Do not mount it in the CLI.
 import { FileSystem, FsError } from "@deepseek-ai/dsh-fs";
 import z from "@deepseek-ai/schemastery";
 import { join, dirname, isAbsolute, resolve as pathResolve } from "node:path";

@@ -14,7 +14,7 @@ import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import * as deepseekLlm from "@deepseek-ai/dsh-llm-deepseek";
 import { GeminiAdapter } from "./gemini-adapter.js";
-import { NodeFs } from "./node-fs.js";
+import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
 import { createTuiHost } from "./tui-renderer.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
@@ -418,7 +418,7 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("llm-deepseek", deepseekLlm);
-mount("fs", NodeFs, { cwd: CWD });
+mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);
 mount("tool-todo", todoTools);
