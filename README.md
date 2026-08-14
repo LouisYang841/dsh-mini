@@ -1,4 +1,24 @@
-# dsh-mini — DSH core as a portable engine + a tiny coding-agent CLI
+# dsh-mini
+
+**DeepSeek Harness 核心的便携引擎 + 一个能干的终端编程 Agent CLI。** pi 的壳（真 `@earendil-works/pi-tui`），DSH 的引擎（事件溯源会话、工具、持久化），我们只负责拼装与解耦。
+
+- **一条命令安装**（Node ≥ 22.15，Termux 先 `pkg install nodejs`）：
+
+  ```sh
+  curl -fsSL https://github.com/LouisYang841/dsh-mini/raw/main/scripts/install.sh | sh
+  dsh-mini
+  ```
+
+- **默认全屏 TUI**（Claude Code 风格）；`DSH_TUI=basic` 简易壳，`DSH_PLAIN=1` 纯文本
+- **Provider**：DeepSeek 默认（官方直连 + pi-ai 双路由）、Gemini、OpenAI / Anthropic / OpenRouter（环境变量存在即启用）
+- **工具**：bash（pi 原生执行器）、read/write/edit/list、todo、skills——bash 能覆盖的不重复造轮子
+- **持久化**：zstd JSONL 会话，`--resume`/`--sessions` 随时回访（Android/Termux 已实测）
+- **架构**：五条缝（`ARCHITECTURE.md`）、决策记录（`DECISIONS.md`）、坑库 skill（`skills/`）——别人拿这份成品改装到其他 harness 只需换缝
+- **许可证**：MIT；拼装组件的归属声明见 `THIRD_PARTY_LICENSES.md`
+
+---
+
+以下为英文文档（架构细节、开发指南）。
 
 This directory is the spike that answers one question: **can the DeepSeek
 Harness core be pulled from npm, run as a self-contained engine behind a

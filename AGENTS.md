@@ -43,6 +43,9 @@ the agent to write its own scripts. Docs for agents beat tools for agents.
 - **Credentials via env only** (`GEMINI_API_KEY`); `.env` is gitignored,
   `.env.example` is the template. Nothing secret goes into source, commits,
   or release notes.
+- **License hygiene**: every NEW bundled dependency must be added to
+  `THIRD_PARTY_LICENSES.md` (component + license + copyright line) in the
+  same commit; releases attach that file next to the artifact.
 - **Conformance gate**: `./run.sh` must stay byte-identical to
   `baseline.node.json` (hash-pinned in `baseline.sha256`) after every
   upstream `@deepseek-ai/*` bump and every engine-side change. Scenarios in
@@ -84,6 +87,8 @@ only for final smoke; AI Studio free quota is per model, switch models.
    dist/dsh-mini.mjs dist/dsh-engine.mjs`.
 4. `scripts/install.sh` downloads `releases/<tag>/download/dsh-mini.mjs` —
    keep the artifact name stable across releases.
+5. Attach `THIRD_PARTY_LICENSES.md` to the release (license notices travel
+   with the artifact).
 
 ## File map
 
