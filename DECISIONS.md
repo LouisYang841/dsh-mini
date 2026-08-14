@@ -5,6 +5,13 @@ the architecture.
 
 ## ADR-0001: assemble the engine instead of forking official dsh
 
+> **Amendment (v0.1.9)**: the "13 packages" below was the engine kernel at
+> ADR time. The CLI feature set has since grown to **39 direct build deps**
+> (npm closure 168 packages / 161MB — TUI react stack + pi-ai's cloud SDKs),
+> still **0 runtime npm deps** and a 7.7MB artifact. The cut ledger and the
+> fork-vs-assemble comparison live in [REFLECTION.md](REFLECTION.md); the
+> assemble decision itself stands.
+
 **Decision**: pull the DSH core as npm-pinned packages behind five seams
 (ARCHITECTURE.md), bundling a portable engine artifact, instead of forking the
 official dsh repo and cutting it down.

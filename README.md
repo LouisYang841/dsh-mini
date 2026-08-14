@@ -20,18 +20,18 @@
 
 | | 官方 DSH | dsh-mini |
 |---|---|---|
-| @deepseek-ai 包 | 188 个 | 构建期 13 个（+ pi-tui 1 个） |
-| 默认 profile 插件 | ~90 个 | ~27 个（全纯 JS，零原生模块） |
+| 构建期直接依赖 | — | **39 个**（npm 闭包 168 包/161MB，见 [REFLECTION.md](REFLECTION.md)） |
+| 默认 profile 插件 | ~90 个 | **31 个**（全纯 JS，零原生模块） |
 | 运行时 npm 依赖 | 全家桶 | **0 个**（产物自包含） |
-| 安装体积 | **359MB** node_modules | **7.6MB 单文件**（约 47 倍缩减） |
+| 安装体积 | **359MB** node_modules | **7.7MB 单文件**（约 47 倍缩减） |
 | 便携引擎 | — | **419KB**，零 Node 内置依赖 |
 
-数字来源：官方安装的 node_modules 实测 359MB；我们的构建期依赖只保留直接 import 的 14 个包（全部 devDependencies，`npm install --omit=dev` 装 0 个）。
+数字来源：官方安装的 node_modules 实测 359MB；我们只保留直接 import 的 39 个构建期包（全部 devDependencies，`npm install --omit=dev` 装 0 个）；完整砍依赖账本见 [REFLECTION.md](REFLECTION.md)。
 
 ## 为什么对 Termux 友好
 
 - **唯一运行时要求：Node ≥ 22.15**——zstd 内置于 `node:zlib`，无原生模块、无编译
-- **一条命令安装**：`curl | sh`，下载单个 7.6MB 自包含文件 + 26 行 launcher，npm 都不需要
+- **一条命令安装**：`curl | sh`，下载单个 7.7MB 自包含文件 + 26 行 launcher，npm 都不需要
 - **bash 工具直接打手机真实文件系统**（OnePlus 15 / Termux 实测：ls、建文件、跑脚本）
 - **为 Android 修过的真坑**（skill 里有记录）：SELinux 禁硬链接 → 持久化降级为 rename 原子发布；`exit` 与 200ms 写批的时序 → 退出前强制 flush
 - **数据和密钥都在手机本地**：会话 JSONL 在 `~/.dsh-mini/sessions`，密钥可从本机 pi 配置导入、不出设备
@@ -73,7 +73,7 @@ dsh-mini
 
 ## 相关项目 / Related
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 本项目的引擎来源（官方 188 包全家桶 → 我们砍到 13 包内核）
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — 本项目的引擎来源（官方 255 包全家桶 → 我们砍到 39 个构建期包、0 运行时依赖）
 - [pi](https://github.com/earendil-works/pi) — 壳与 provider 生态来源（pi-tui / pi-ai）
 - [@openguardrails/dsh-tui](https://github.com/openguardrails/dsh-tui) — 默认全屏 TUI（同为 pi-tui 系，MIT）
 - [dsh-cc-tui](https://github.com/ccch1mneyyy/dsh-TUI) — 另一社区 TUI（BSD-3，仅作参考未打包）
