@@ -9,6 +9,7 @@ if (typeof v === "function") return "[Function]";
 if (depth <= 0) return "[...]";
 if (seen.has(v)) return "[Circular]";
 seen.add(v);
+try {
 if (Array.isArray(v)) return "[" + v.map((x) => inspectInner(x, depth - 1, seen)).join(", ") + "]";
 if (v instanceof Error) return v.name + ": " + v.message;
 if (v instanceof Map) return "Map(" + v.size + ")";
@@ -16,6 +17,9 @@ if (v instanceof Set) return "Set(" + v.size + ")";
 const keys = Object.keys(v);
 const body = keys.map((k) => k + ": " + inspectInner(v[k], depth - 1, seen)).join(", ");
 return "{" + body + "}";
+} finally {
+seen.delete(v);
+}
 }
 
 export function inspect(v) {

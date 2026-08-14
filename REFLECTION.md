@@ -23,7 +23,7 @@
 | 区域 | 行数 | 内容 |
 |---|---|---|
 | `cli/` | 1,560 | 宿主启动 cli.js 673 · Gemini 适配器 263 · node-fs 契约参考 141 · 横幅 130 · bash 胶水 126 · basic TUI 110 · skill 扫描器 78 · 构建脚本 39 |
-| `shims/` | 737 | **19 个 node:\* API 的纯 JS 实现/大声失败桩**（path/util/crypto/async_hooks/module/events/perf/timers/os/fs/buffer + url/stream/zlib/worker_threads/child_process/sqlite 桩） |
+| `shims/` | 737 | **19 个 node:\* API 的纯 JS 实现/大声失败桩**（path/util/util_types/crypto/async_hooks/module/events/perf/timers/os/fs/fs-promises/buffer + url/stream/zlib/worker_threads/child_process/sqlite 桩） |
 | `polyfills.js` + `main.js` | 539 | 引擎差异归一化（QuickJS/V8）+ 假 provider 一致性场景 |
 | `patches/` + `scripts/` + 根脚本 | 273 | 确定性 vendor 补丁 + 安装器 + 构建/一致性门 |
 | **手写合计** | **3,109** | |

@@ -317,6 +317,26 @@ byte-for-byte. Rules:
   status bar; persistence/skills/commands/ask-user all wired); titles
   auto-mount with DSH_CC_TUI because its session list expects them.
 
+## Toolpackage and Operit host pitfalls
+
+- Toolpackages (`cli/tool-scanner.js`) are out-of-process by design: manifest
+  name/description/parameters/output/command/timeoutMs/allowEnv; JSON args on
+  stdin, one JSON value on stdout. Child env is a strict allowlist, so tools
+  needing a credential must declare it in `allowEnv`. Use `/tools reload`
+  after manifest edits.
+- Operit persistence (`operit/src/store.js`) uses `file_exists` / `read_file_full` /
+  `write_file` envelopes. Treat bridge errors as failures instead of
+  "missing file" — a transient read error must not reset the session log.
+- Operit sessions are capped at MAX_KEPT_EVENTS; derive the append offset from
+  the last persisted event `seq`, never from the current line count after
+  trimming.
+- Operit adapters must honor `options.signal` and close their stream queue;
+  `setInterval` polling in the Operit turn driver should be a cancellable
+  async poll loop, not an interval whose tail can be dropped on stop.
+- Operit boot is shared per apiKey+model. Keep `configKey` identical between
+  `createEngine` and `bootDsh`, and cache the in-flight boot promise so
+  concurrent callers do not build/dispose duplicate engines.
+
 ## Release artifact self-containment
 
 - dsh-llm reads its own version via `createRequire(import.meta.url)

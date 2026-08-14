@@ -69,7 +69,7 @@ class SelfTestAdapter extends LlmAdapter {
  * exercises the exact same mount list as production.
  */
 async function createEngine(config, adapterFactory, agentId) {
-	const engine = { ctx: new Context(), agent: null, bootError: null, config, configKey: `${config.apiKey}:${config.modelName}:${agentId}` };
+	const engine = { ctx: new Context(), agent: null, bootError: null, config, configKey: `${config.apiKey}:${config.modelName}` };
 	const boot = async (ctx) => {
 		const adapter = adapterFactory();
 		ctx.llm.registerAdapter(["deepseek"], adapter);

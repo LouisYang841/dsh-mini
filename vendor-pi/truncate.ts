@@ -1,4 +1,13 @@
 /**
+ * Vendored from @earendil-works/pi coding-agent
+ * (packages/coding-agent/src/core/truncate.ts, MIT).
+ *
+ * Copyright (c) earendil-works / pi contributors.
+ * dsh-mini modifies the truncation-reason derivation around trailing-newline
+ * byte limits; see skills/dsh-core-embedding/SKILL.md.
+ */
+
+/**
  * Shared truncation utilities for tool outputs.
  *
  * Truncation is based on two independent limits - whichever is hit first wins:

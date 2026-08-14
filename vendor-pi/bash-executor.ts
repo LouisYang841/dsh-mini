@@ -52,8 +52,8 @@ export interface BashExecutorOptions {
 export interface BashResult {
 	/** Combined stdout + stderr output (sanitized, possibly truncated) */
 	output: string;
-	/** Process exit code (undefined if killed/cancelled) */
-	exitCode: number | undefined;
+	/** Process exit code (null if killed/cancelled) */
+	exitCode: number | null;
 	/** Whether the command was cancelled via signal */
 	cancelled: boolean;
 	/** Whether the output was truncated */
@@ -165,7 +165,7 @@ export async function executeBashWithOperations(
 		const spillOk = await finishTempFile();
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
-			exitCode: cancelled ? undefined : (exitCode ?? undefined),
+			exitCode: cancelled ? null : exitCode ?? null,
 			cancelled,
 			truncated: truncationResult.truncated,
 			...(spillOk && tempFilePath !== undefined ? { fullOutputPath: tempFilePath } : {}),

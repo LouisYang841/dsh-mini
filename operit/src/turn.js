@@ -31,25 +31,28 @@ export async function driveTurn(engine, userText) {
 	// so always re-read agent.session.events — never cache the array.
 	let relayed = agent.session.events.length;
 	let stopped = false;
+	const drain = () => {
+		const events = agent.session.events;
+		for (let i = relayed; i < events.length; i++) {
+			const event = events[i];
+			if (event.type === "assistant/chunk") {
+				const chunk = event.data?.chunk;
+				// Stream text-delta increments; block-end carries the FULL
+				// block again, so relaying it would double-print.
+				if (chunk?.type === "text-delta" && chunk.text) relayChunk(chunk.text);
+				else if (chunk?.type === "reasoning-delta" && chunk.text) relayChunk(chunk.text);
+			} else if (event.type === "tool/start" || event.type === "tool/update") {
+				const name = norm(event.data?.name);
+				if (name) relayChunk(`\n⏳ tool: ${name}`);
+			} else if (event.type === "tool/result") {
+				relayChunk(` ✔`);
+			}
+		}
+		relayed = events.length;
+	};
 	const poller = (async () => {
 		while (!stopped) {
-			const events = agent.session.events;
-			for (let i = relayed; i < events.length; i++) {
-				const event = events[i];
-				if (event.type === "assistant/chunk") {
-					const chunk = event.data?.chunk;
-					// Stream text-delta increments; block-end carries the FULL
-					// block again, so relaying it would double-print.
-					if (chunk?.type === "text-delta" && chunk.text) relayChunk(chunk.text);
-					else if (chunk?.type === "reasoning-delta" && chunk.text) relayChunk(chunk.text);
-				} else if (event.type === "tool/start" || event.type === "tool/update") {
-					const name = norm(event.data?.name);
-					if (name) relayChunk(`\n⏳ tool: ${name}`);
-				} else if (event.type === "tool/result") {
-					relayChunk(` ✔`);
-				}
-			}
-			relayed = events.length;
+			drain();
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		}
 	})();
@@ -60,6 +63,7 @@ export async function driveTurn(engine, userText) {
 	} finally {
 		stopped = true;
 		await poller;
+		drain();
 	}
 
 	// Best-effort durable log: persistence must never break the turn.

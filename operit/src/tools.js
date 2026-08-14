@@ -59,7 +59,7 @@ export function defineExecTool() {
 					success: { type: "boolean", required: true },
 				},
 			},
-			render: (_args, value) => value.output,
+			render: (_args, value) => [{ type: "text", text: value.output }],
 		},
 		async execute(args, exec) {
 			let result;
@@ -69,7 +69,7 @@ export function defineExecTool() {
 					params: {
 						command: args.command,
 						...(args.background === true ? { background: "true" } : {}),
-						...(args.timeoutMs !== undefined
+						...(Number.isFinite(args.timeoutMs)
 							? { timeoutMs: String(Math.max(3000, Math.floor(args.timeoutMs))) }
 							: {}),
 					},

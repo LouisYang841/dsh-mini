@@ -157,11 +157,12 @@ const PLAN_MODE_SECTION = [
 
 process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection:", r?.stack ?? String(r)));
 
-// Persist an interactively entered key: user config dir first, cwd .env
-// fallback (both gitignored; never touch the repo's tracked files).
+// Persist an interactively entered key ONLY to the user config dir. A cwd
+// .env may be tracked in an arbitrary workspace, and dsh-mini must never
+// write a credential into a file the user could commit accidentally.
 function persistCredential(provider, key) {
 	const env = PROVIDER_DEFAULTS[provider].keyEnv;
-	for (const target of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
+	for (const target of [join(homedir(), ".dsh-mini", "env")]) {
 		try {
 			// Credential files must never be world-readable. The mode only
 			// applies to newly-created directories/files, so chmod the file
@@ -496,7 +497,7 @@ const boot = async (ctx) => {
 	if (!process.env.DSH_NO_AGENTS) {
 		const agentsPath = join(CWD, "AGENTS.md");
 		if (existsSync(agentsPath)) {
-			const instructions = readFileSync(agentsPath, "utf8").slice(0, AGENTS_MD_CAP);
+			const instructions = readFileSync(agentsPath, "utf8").slice(0, AGENTS_MD_CAP).replaceAll("</workspace_instructions>", "<\\/workspace_instructions>");
 			ctx.systemPrompt.section({
 				name: "workspace:agents",
 				order: -90,
@@ -542,10 +543,13 @@ const boot = async (ctx) => {
 	// listener + queue fixes it: early lines queue, askUser drains the queue.
 	let lineQueue = [];
 	let lineResolver = null;
+	let lineReject = null;
 	const queueLine = (line) => {
 		if (lineResolver) {
 			const resolve = lineResolver;
+			const reject = lineReject;
 			lineResolver = null;
+			lineReject = null;
 			resolve(line);
 		} else {
 			lineQueue.push(line);
@@ -557,6 +561,12 @@ const boot = async (ctx) => {
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
 		// turn that is still streaming.
 		plainRl.on("close", () => {
+			if (lineResolver) {
+				const reject = lineReject;
+				lineResolver = null;
+				lineReject = null;
+				reject?.(new Error("stdin closed while dsh-mini was waiting for setup input"));
+			}
 			if (!plainInputActive) return;
 			stdinClosed = true;
 			if (!busy) void gracefulExit();
@@ -569,9 +579,12 @@ const boot = async (ctx) => {
 	}
 	const askUser = (question) => {
 		process.stdout.write(question);
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			if (lineQueue.length > 0) resolve(lineQueue.shift());
-			else lineResolver = resolve;
+			else {
+				lineResolver = resolve;
+				lineReject = reject;
+			}
 		});
 	};
 
@@ -600,6 +613,23 @@ const boot = async (ctx) => {
 			persistCredential(answer, key);
 		}
 	}
+	// pi-ai routes are key-gated and must be built AFTER the env loader and
+	// interactive setup have populated process.env; mounting this at module
+	// scope would miss first-run keys.
+	await ctx.plugin(piAiNs, {
+		providers: {
+			deepseek: { apiKeyEnv: "DEEPSEEK_API_KEY" },
+			...(process.env.OPENAI_API_KEY ? { openai: { apiKeyEnv: "OPENAI_API_KEY" } } : {}),
+			...(process.env.ANTHROPIC_API_KEY ? { anthropic: { apiKeyEnv: "ANTHROPIC_API_KEY" } } : {}),
+			...(process.env.OPENROUTER_API_KEY ? { openrouter: { apiKeyEnv: "OPENROUTER_API_KEY" } } : {}),
+		},
+	}).then(
+		() => {},
+		(err) => {
+			console.error("[llm-pi-ai] mount FAILED:", err?.stack ?? String(err));
+			process.exit(1);
+		},
+	);
 	if (setupRl) {
 		setupRl.close();
 		setupRl = null;
@@ -978,14 +1008,6 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("llm-deepseek", deepseekLlm);
-mount("llm-pi-ai", piAiNs, {
-	providers: {
-		deepseek: { apiKeyEnv: "DEEPSEEK_API_KEY" },
-		...(process.env.OPENAI_API_KEY ? { openai: { apiKeyEnv: "OPENAI_API_KEY" } } : {}),
-		...(process.env.ANTHROPIC_API_KEY ? { anthropic: { apiKeyEnv: "ANTHROPIC_API_KEY" } } : {}),
-		...(process.env.OPENROUTER_API_KEY ? { openrouter: { apiKeyEnv: "OPENROUTER_API_KEY" } } : {}),
-	},
-});
 mount("commands", commandsNs.CommandRuntime);
 mount("user-questions", userQuestionsNs.UserQuestionService);
 mount("token-meter", tokenMeterNs.TokenMeter);

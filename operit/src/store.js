@@ -20,17 +20,13 @@ export function sessionLogPath() {
 }
 
 async function fileExists(path) {
-	try {
-		const result = await toolCall({ name: "file_exists", params: { path } });
-		const parsed = typeof result === "string" ? JSON.parse(result) : result;
-		if (parsed && typeof parsed === "object") {
-			if (parsed.success === false) return false;
-			if (Object.prototype.hasOwnProperty.call(parsed, "exists")) return parsed.exists === true || parsed.exists === "true";
-		}
-		return false;
-	} catch {
-		return false;
+	const result = await toolCall({ name: "file_exists", params: { path } });
+	const parsed = typeof result === "string" ? JSON.parse(result) : result;
+	if (parsed && typeof parsed === "object") {
+		if (parsed.success === false) return false;
+		if (Object.prototype.hasOwnProperty.call(parsed, "exists")) return parsed.exists === true || parsed.exists === "true";
 	}
+	return false;
 }
 
 async function readText(path) {
@@ -65,16 +61,24 @@ function serializeEvent(event) {
 export async function appendSessionEvents(engine) {
 	const path = sessionLogPath();
 	let existing = "";
-	try {
-		if (await fileExists(path)) existing = await readText(path);
-	} catch {
-		existing = ""; // first write or unreadable log: start fresh
-	}
+	if (await fileExists(path)) existing = await readText(path);
 	const events = engine.agent.session.events;
 	const lines = existing.split("\n").filter((line) => line.trim().length > 0);
-	// `session.events` is the cumulative log, not a per-turn delta. Append only
-	// events after the persisted prefix so each event is written once.
-	const newEvents = lines.length <= events.length ? events.slice(lines.length) : [];
+	// `session.events` is cumulative and the file may have been capped, so the
+	// append offset must come from the last persisted seq, not lines.length.
+	let persistedNext = 0;
+	const lastLine = lines.at(-1);
+	if (lastLine !== undefined) {
+		try {
+			const last = JSON.parse(lastLine);
+			if (Number.isSafeInteger(last.seq)) persistedNext = last.seq + 1;
+		} catch {
+			persistedNext = lines.length;
+		}
+	} else {
+		persistedNext = lines.length;
+	}
+	const newEvents = persistedNext <= events.length ? events.slice(persistedNext) : [];
 	lines.push(...newEvents.map(serializeEvent));
 	while (lines.length > MAX_KEPT_EVENTS) lines.shift();
 	await writeText(path, lines.join("\n") + "\n");

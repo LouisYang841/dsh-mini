@@ -309,7 +309,8 @@ if (typeof Array.prototype.toReversed === "undefined") {
 if (typeof Array.prototype.toSpliced === "undefined") {
 	defineNonEnumerable(Array.prototype, "toSpliced", function toSpliced(start, deleteCount, ...items) {
 		const copy = this.slice();
-		copy.splice(start, deleteCount, ...items);
+		if (arguments.length <= 1) copy.splice(start);
+		else copy.splice(start, deleteCount, ...items);
 		return copy;
 	});
 }

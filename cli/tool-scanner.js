@@ -110,13 +110,12 @@ function renderToolResult(value) {
  * by default; manifests may explicitly allowlist required credentials such as
  * DEEPSEEK_API_KEY with `allowEnv`. */
 function toolEnv(allowEnv) {
+	// Strict allowlist: only explicit allowEnv entries and host-neutral
+	// variables reach the child. Unknown variables are dropped even if their
+	// names do not look secret (AWS_ACCESS_KEY_ID, DATABASE_URL, etc.).
 	const allowed = new Set(allowEnv)
 	const safe = (name) => /^(PATH|HOME|USER|SHELL|LANG|LC_[A-Z_]+|TERM|TMPDIR|TMP|TEMP)$/.test(name)
-	return Object.fromEntries(Object.entries(process.env).filter(([name]) => {
-		if (allowed.has(name)) return true
-		if (safe(name)) return true
-		return !/(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name)
-	}))
+	return Object.fromEntries(Object.entries(process.env).filter(([name]) => allowed.has(name) || safe(name)))
 }
 
 function killProcessTree(child) {
@@ -191,11 +190,13 @@ export async function runToolpackage(definition, args, signal) {
       child.on('error', reject)
       child.on('close', (code) => resolve(code))
     })
+    stdout += stdoutDecoder.end()
+    stderr += stderrDecoder.end()
 
     if (signal?.aborted) throw new Error(`tool "${definition.name}" was aborted`)
     if (timedOut) throw new Error(`tool "${definition.name}" timed out after ${definition.timeoutMs}ms`)
-    if (exitCode !== 0) throw new Error(stderr.trim() || `tool "${definition.name}" exited with code ${exitCode}`)
     if (outputBytes > MAX_OUTPUT_BYTES) throw new Error(`tool "${definition.name}" output exceeded ${MAX_OUTPUT_BYTES} bytes`)
+    if (exitCode !== 0) throw new Error(stderr.trim() || `tool "${definition.name}" exited with code ${exitCode}`)
 
     const text = stdout.trim()
     try {
@@ -205,8 +206,6 @@ export async function runToolpackage(definition, args, signal) {
       throw new Error(`tool "${definition.name}" did not return valid JSON from stdout${stderr.trim() ? `: ${stderr.trim()}` : ''}`)
     }
   } finally {
-    stdout += stdoutDecoder.end()
-    stderr += stderrDecoder.end()
     if (timeoutHandle) clearTimeout(timeoutHandle)
     signal?.removeEventListener('abort', onAbort)
   }

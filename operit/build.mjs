@@ -8,8 +8,8 @@ async function loadEsbuild() {
 	try {
 		return await import("esbuild");
 	} catch {
-		const local = process.env.ESBUILD_MODULE ?? "/home/ubuntu/Dsh_workspace/spike-tools/node_modules/esbuild/lib/main.js";
-		return await import(pathToFileURL(local).href);
+		if (process.env.ESBUILD_MODULE) return await import(pathToFileURL(process.env.ESBUILD_MODULE).href);
+		throw new Error("esbuild is not installed; run npm install or set ESBUILD_MODULE to an esbuild entry module");
 	}
 }
 const { build } = await loadEsbuild();

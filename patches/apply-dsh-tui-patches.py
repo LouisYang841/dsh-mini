@@ -117,5 +117,10 @@ def apply(path):
 
 
 if __name__ == "__main__":
-	ok = all(apply(p) for p in sys.argv[1:])
+	if len(sys.argv) < 2:
+		print("usage: apply-dsh-tui-patches.py <dsh-tui index.js> ...", file=sys.stderr)
+		sys.exit(2)
+	ok = True
+	for p in sys.argv[1:]:
+		ok = apply(p) and ok
 	sys.exit(0 if ok else 1)

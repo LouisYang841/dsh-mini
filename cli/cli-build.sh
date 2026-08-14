@@ -13,8 +13,8 @@ fi
 ESBUILD="${ESBUILD:-}"
 if [ -z "$ESBUILD" ]; then
   if command -v npx >/dev/null 2>&1; then ESBUILD="npx --yes esbuild"
-  elif [ -x /home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild ]; then ESBUILD="/home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild"
-  else echo "esbuild not found: install it or set ESBUILD"; exit 1; fi
+  elif [ -x node_modules/.bin/esbuild ]; then ESBUILD="node_modules/.bin/esbuild"
+  else echo "esbuild not found: run npm install or set ESBUILD"; exit 1; fi
 fi
 ALIAS_FLAG=""
 if [ -f vendor/node_modules/@earendil-works/pi-tui/dist/index.js ]; then
