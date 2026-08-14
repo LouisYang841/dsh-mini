@@ -34,6 +34,14 @@ builtins and a real provider adapter. Every host needs: a boot plugin with an
 3. **`dsh-tool-fs` / `dsh-tool-todo` are function plugins** (export `apply`),
    not classes. Mount with `root.plugin(ns)` where `ns` is the module
    namespace. Class-style `root.plugin(DefaultExport)` silently fails.
+   **A required Config field without a default silences the whole plugin:**
+   `dsh-tool-todo`'s Config is `z.object({ allowParallelInProgress:
+   z.boolean().required() })`. Mounting it with NO config makes config
+   validation fail and the fiber dies fire-and-forget — the mount "succeeds"
+   but `todo_write` never registers (`unknown tool "todo_write"`). Always
+   mount it as `root.plugin(ns, { allowParallelInProgress: true })`, and
+   probe `ctx.tools.view(...).visible` for the tool names you expect after
+   mounting.
 4. **Plugin `Config` must be a schemastery schema** (`z.object({...})`), not
    a plain object. A plain object fails cordis config validation with
    `Cannot read properties of undefined (reading 'validate')` — reported on

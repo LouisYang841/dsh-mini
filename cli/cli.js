@@ -638,7 +638,7 @@ if (process.env.DSH_TITLES || USE_CC_TUI) {
 mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);
-mount("tool-todo", todoTools);
+mount("tool-todo", todoTools, { allowParallelInProgress: true });
 mount("agentLoop", AgentLoop, { maxParallelToolCalls: 4 });
 root.plugin(boot).then(
 	() => {},
