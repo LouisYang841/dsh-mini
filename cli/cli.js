@@ -12,20 +12,19 @@ import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
 import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
+import * as deepseekLlm from "@deepseek-ai/dsh-llm-deepseek";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { NodeFs } from "./node-fs.js";
 import { createTuiHost } from "./tui-renderer.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { zstdCompress } from "node:zlib";
 import { homedir } from "node:os";
 
-const API_KEY = process.env.GEMINI_API_KEY;
-if (!API_KEY) {
-	console.error("GEMINI_API_KEY is required (create one at https://aistudio.google.com/apikey).");
-	process.exit(1);
-}
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const CWD = process.cwd();
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
 // node:zlib zstd is built into Node >= 22.15 (no system lib); degrade to
@@ -35,12 +34,21 @@ if (!HAS_ZSTD) console.error("[warn] node:zlib zstd unavailable (Node < 22.15): 
 // pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
 const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
 
-// CLI args: node cli.mjs [model] [--resume <id>] [--sessions]
+// CLI args: node cli.mjs [model] [--provider <id>] [--resume <id>] [--sessions]
 const ARGS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const RESUME_INDEX = process.argv.indexOf("--resume");
 const RESUME_ID = RESUME_INDEX >= 0 ? process.argv[RESUME_INDEX + 1] : undefined;
+const PROVIDER_INDEX = process.argv.indexOf("--provider");
+const PROVIDER_OVERRIDE = PROVIDER_INDEX >= 0 ? process.argv[PROVIDER_INDEX + 1] : undefined;
 const LIST_SESSIONS = process.argv.includes("--sessions");
-const MODEL = ARGS[0] ?? "gemini-flash-latest";
+// DeepSeek is the default provider (this is dsh, after all): the DSH-native
+// dsh-llm-deepseek adapter owns the "deepseek-official" route.
+const PROVIDER_DEFAULTS = {
+	"deepseek-official": { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
+	google: { model: "gemini-flash-latest", keyEnv: "GEMINI_API_KEY" },
+};
+const PROVIDER = PROVIDER_OVERRIDE ?? process.env.DSH_PROVIDER ?? (process.env.DEEPSEEK_API_KEY || !process.env.GEMINI_API_KEY ? "deepseek-official" : "google");
+const MODEL = ARGS[0] ?? PROVIDER_DEFAULTS[PROVIDER]?.model ?? "deepseek-v4-flash";
 
 const PERSONA = [
 	"You are dsh-mini, a compact interactive coding agent CLI built on the DeepSeek Harness core.",
@@ -54,10 +62,57 @@ const PERSONA = [
 
 process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection:", r?.stack ?? String(r)));
 
+// Minimal env loader: ~/.dsh-mini/env then ./.env (gitignored), KEY=VALUE
+// lines, never overriding the real environment.
+for (const envFile of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
+	try {
+		if (!existsSync(envFile)) continue;
+		for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
+			const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+			if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].trim();
+		}
+	} catch {
+		// unreadable env file is not fatal
+	}
+}
+
+// Persist an interactively entered key: user config dir first, cwd .env
+// fallback (both gitignored; never touch the repo's tracked files).
+function persistCredential(provider, key) {
+	const env = PROVIDER_DEFAULTS[provider].keyEnv;
+	for (const target of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
+		try {
+			mkdirSync(dirname(target), { recursive: true });
+			const previous = existsSync(target) ? readFileSync(target, "utf8").replace(new RegExp(`^${env}=.*$`, "m"), "").trimEnd() : "";
+			writeFileSync(target, `${previous}${previous ? "\n" : ""}${env}=${key}\n`);
+			console.log(`(saved ${env} to ${target})`);
+			return;
+		} catch {
+			// try the next target
+		}
+	}
+	console.error(`[warn] could not persist ${env}; it is set for this session only`);
+}
+
+const AGENTS_MD_CAP = 30 * 1024; // keep injected instructions bounded
+
 const boot = async (ctx) => {
-	ctx.llm.registerAdapter(["google"], new GeminiAdapter(API_KEY));
+	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
 	ctx.tools.register(defineBashTool());
 	ctx.systemPrompt.section(bashGuidanceSection());
+	// Workspace instructions: inject <cwd>/AGENTS.md so the agent starts every
+	// session knowing this repo's rules (docs-for-agents over tools-for-agents).
+	if (!process.env.DSH_NO_AGENTS) {
+		const agentsPath = join(CWD, "AGENTS.md");
+		if (existsSync(agentsPath)) {
+			const instructions = readFileSync(agentsPath, "utf8").slice(0, AGENTS_MD_CAP);
+			ctx.systemPrompt.section({
+				name: "workspace:agents",
+				order: -90,
+				text: `<workspace_instructions file="AGENTS.md">\n${instructions}\n</workspace_instructions>`,
+			});
+		}
+	}
 
 	if (LIST_SESSIONS) {
 		const headers = await ctx.sessionPersistence.list();
@@ -67,22 +122,95 @@ const boot = async (ctx) => {
 		process.exit(0);
 	}
 
-	const makeAgent = (model) => {
+	const makeAgent = (model, provider = PROVIDER) => {
 		return ctx.agentLoop.create(
 			`cli-${Date.now().toString(36)}`,
-			{ provider: "google", model },
+			{ provider, model },
 			{ cwd: CWD },
 		);
 	};
 
-	let agent;
+	let agent = null;
+	let busy = false;
+
+	// ---- renderer first: interactive setup needs it before the agent exists ----
+	const ui = TTY
+		? createTuiHost({
+				onLine: (line) => void handleLine(line),
+				onInterrupt: () => {
+					if (busy && agent) agent.cancel({ kind: "user-interrupt" });
+				},
+			})
+		: null;
+
+	let plainRl = null;
+	let stdinClosed = false;
+	// Piped stdin delivers whole chunks at once, so rl.question misses lines
+	// that arrive before the next question is registered. A persistent
+	// listener + queue fixes it: early lines queue, askUser drains the queue.
+	let lineQueue = [];
+	let lineResolver = null;
+	if (!ui) {
+		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+		plainRl.on("line", (line) => {
+			if (lineResolver) {
+				const resolve = lineResolver;
+				lineResolver = null;
+				resolve(line);
+			} else {
+				lineQueue.push(line);
+			}
+		});
+		// Exit on stdin EOF only when idle: a closing pipe must not kill a
+		// turn that is still streaming.
+		plainRl.on("close", () => {
+			stdinClosed = true;
+			if (!busy) process.exit(0);
+		});
+	}
+	const askUser = (question) => {
+		process.stdout.write(question);
+		if (ui) return ui.ask(question);
+		return new Promise((resolve) => {
+			if (lineQueue.length > 0) resolve(lineQueue.shift());
+			else lineResolver = resolve;
+		});
+	};
+
+	let currentProvider = PROVIDER;
 	let currentModel = MODEL;
+	if (!process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv]) {
+		const hasAnyKey = Object.values(PROVIDER_DEFAULTS).some((def) => process.env[def.keyEnv]);
+		if (hasAnyKey) {
+			console.error(`[warn] ${PROVIDER_DEFAULTS[currentProvider].keyEnv} is not set: ${currentProvider} calls will fail with MISSING_CREDENTIAL`);
+		} else {
+			// First run: no keys anywhere — interactive provider + key setup.
+			console.log("No API key detected. Configure a provider:");
+			const answer = (await askUser("provider (deepseek-official/google) [deepseek-official]: ")).trim() || "deepseek-official";
+			if (!PROVIDER_DEFAULTS[answer]) {
+				console.error(`unknown provider "${answer}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})`);
+				process.exit(1);
+			}
+			currentProvider = answer;
+			currentModel = PROVIDER_DEFAULTS[answer].model;
+			const key = (await askUser(`${PROVIDER_DEFAULTS[answer].keyEnv}: `)).trim();
+			if (!key) {
+				console.error("empty API key; set the env var and restart");
+				process.exit(1);
+			}
+			process.env[PROVIDER_DEFAULTS[answer].keyEnv] = key;
+			persistCredential(answer, key);
+		}
+	}
+
+	let usage = undefined;
+
 	if (RESUME_ID) {
 		try {
 			const published = await Promise.race([
 				ctx.agentLoop.resume(ctx, {
 					resumeSessionId: RESUME_ID,
-					agentOptions: { provider: "google", model: currentModel },
+					agentOptions: { provider: currentProvider, model: currentModel },
 				}),
 				new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
 			]);
@@ -92,30 +220,16 @@ const boot = async (ctx) => {
 			process.exit(1);
 		}
 	} else {
-		agent = makeAgent(currentModel);
+		agent = makeAgent(currentModel, currentProvider);
 	}
 
-	let usage = undefined;
-	let busy = false;
-
 	const statusLine = () =>
-		`dsh-mini · ${currentModel} · ${agent.session.id}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
-
-	// ---- renderer: pi-tui shell or plain terminal ----
-
-	const ui = TTY
-		? createTuiHost({
-				onLine: (line) => void handleLine(line),
-				onInterrupt: () => {
-					if (busy) agent.cancel({ kind: "user-interrupt" });
-				},
-			})
-		: null;
+		`dsh-mini · ${currentProvider}/${currentModel} · ${agent.session.id}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
 
 	if (ui) {
 		ui.setStatus(statusLine());
 	} else {
-		console.log(`dsh-mini — DSH core + ${MODEL} @ Google AI Studio`);
+		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"})`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
 		console.log("commands: /clear  /model <id>  /sessions  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
@@ -131,9 +245,25 @@ const boot = async (ctx) => {
 				process.exit(0);
 			}
 			if (trimmed === "") return;
+			if (trimmed.startsWith("/provider ")) {
+				const next = trimmed.slice(10).trim();
+				if (next && PROVIDER_DEFAULTS[next]) {
+					agent.cancel({ kind: "user-provider-switch" });
+					currentProvider = next;
+					currentModel = PROVIDER_DEFAULTS[next].model;
+					agent = makeAgent(currentModel, currentProvider);
+					if (ui) ui.setStatus(statusLine());
+					else console.log(`(switched to ${next}, new session: ${agent.session.id})`);
+				} else {
+					const row = "providers: " + Object.keys(PROVIDER_DEFAULTS).join(", ");
+					if (ui) ui.addToolResult(row, false);
+					else console.log(row);
+				}
+				return;
+			}
 			if (trimmed === "/clear") {
 				agent.cancel({ kind: "user-clear" });
-				agent = makeAgent(currentModel);
+				agent = makeAgent(currentModel, currentProvider);
 				if (ui) ui.setStatus(statusLine());
 				else console.log(`(new session: ${agent.session.id})`);
 				return;
@@ -179,7 +309,7 @@ const boot = async (ctx) => {
 				if (next) {
 					agent.cancel({ kind: "user-model-switch" });
 					currentModel = next;
-					agent = makeAgent(next);
+					agent = makeAgent(next, currentProvider);
 					if (ui) ui.setStatus(statusLine());
 					else console.log(`(switched to ${next}, new session: ${agent.session.id})`);
 				}
@@ -195,6 +325,7 @@ const boot = async (ctx) => {
 			busy = false;
 			ui?.setBusy(false);
 			ui?.focus();
+			if (stdinClosed) process.exit(0);
 		}
 	};
 
@@ -249,7 +380,8 @@ const boot = async (ctx) => {
 	ctx.on("session/event", (subject, event) => {
 		if (subject !== agent.session) return;
 		if (process.env.DSH_DEBUG && event.type === "request/header") {
-			console.error("[debug] header.tools:", JSON.stringify(event.data?.header?.tools ?? null).slice(0, 300));
+			console.error("[debug] header.tools:", JSON.stringify(event.data?.header?.tools ?? null).slice(0, 200));
+			console.error("[debug] header.system:", String(event.data?.header?.system ?? "").slice(0, 5000));
 		}
 		try {
 			renderEvent(event);
@@ -261,16 +393,14 @@ const boot = async (ctx) => {
 	// ---- plain-mode REPL (pi-tui drives its own input) ----
 
 	if (!ui) {
-		const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-		rl.on("close", () => process.exit(0));
-		const ask = () => {
-			rl.question("you> ", async (line) => {
+		const ask = async () => {
+			for (;;) {
+				const line = await askUser("you> ");
 				await handleLine(line);
 				process.stdout.write("\n");
-				ask();
-			});
+			}
 		};
-		ask();
+		void ask();
 	}
 };
 boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence"];
@@ -287,6 +417,7 @@ mount("sessions", SessionStore);
 mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: true, includeRuntimeContext: false });
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
+mount("llm-deepseek", deepseekLlm);
 mount("fs", NodeFs, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);

@@ -27,6 +27,7 @@ export function createTuiHost({ onLine, onInterrupt }) {
 
 	let assistantBuffer = "";
 	let assistantText = null;
+	let askResolver = null;
 
 	const addLine = (text) => {
 		lines.addChild(new Text(text, 0, 0));
@@ -37,6 +38,13 @@ export function createTuiHost({ onLine, onInterrupt }) {
 	};
 
 	input.onSubmit = (value) => {
+		if (askResolver) {
+			const resolve = askResolver;
+			askResolver = null;
+			input.setValue("");
+			resolve(value);
+			return;
+		}
 		if (busy || !value.trim()) return;
 		addLine("you> " + value);
 		onLine(value.trim());
@@ -61,6 +69,12 @@ export function createTuiHost({ onLine, onInterrupt }) {
 	return {
 		setBusy(value) {
 			busy = value;
+		},
+		ask(question) {
+			addLine(question);
+			return new Promise((resolve) => {
+				askResolver = resolve;
+			});
 		},
 		setStatus(line) {
 			status.setText(line);

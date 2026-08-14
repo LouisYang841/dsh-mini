@@ -176,6 +176,27 @@ byte-for-byte. Rules:
   unfixed code (symptom: live run errors while the isolated replay passes).
 - Vendored pi files are MIT; keep the attribution header.
 
+## CLI host pitfalls (second batch)
+
+- **Piped stdin swallows lines**: `readline` consumes a whole chunk and emits
+  all `line` events before the next `rl.question` is registered, so piped
+  answers to consecutive questions are lost. Use one persistent `line`
+  listener + a queue (`lineQueue`/`lineResolver` in cli.js).
+- **Close must not kill a busy process**: `rl.on("close", () =>
+  process.exit(0))` terminates mid-turn when a pipe closes. Exit only when
+  idle; otherwise latch a flag and exit after `whenIdle()`.
+- **TDZ strikes again**: `close`/`onSubmit` callbacks registered before
+  `busy`/`agent` declarations — hoist shared mutable state to the top of the
+  boot body.
+- **dsh-llm-deepseek**: function plugin (`apply`), provider route
+  `deepseek-official`; the API key resolves from the credentials service or,
+  absent one, from the env var named by `apiKeyEnv` (`DEEPSEEK_API_KEY`).
+- **AGENTS.md injection**: `ctx.systemPrompt.section({name:
+  "workspace:agents", order: -90, ...})` from the boot plugin lands in the
+  global prompt layer and reaches every agent; verify via
+  `DSH_DEBUG=1` + grep for the section marker in stderr — the debug print is
+  MULTILINE, so `grep "header.system"` alone only shows the first line.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is

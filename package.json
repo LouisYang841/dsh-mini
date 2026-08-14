@@ -25,6 +25,7 @@
     "@deepseek-ai/dsh-tool-todo": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
     "@earendil-works/pi-tui": "0.84.1",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.6"
   }
 }

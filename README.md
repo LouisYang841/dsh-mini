@@ -64,9 +64,14 @@ cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 node cli/cli.mjs [model] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
 ```
 
-Provider credentials come from the environment: `GEMINI_API_KEY=<key>` (or a
-gitignored `.env`; see `.env.example`). Free AI Studio quota is per model —
-`/model <id>` switches when one bucket runs dry.
+**Providers.** DeepSeek is the default (`deepseek-official` route via DSH's own
+`dsh-llm-deepseek` adapter; `DEEPSEEK_API_KEY`), Google Gemini via
+`GEMINI_API_KEY`. Switch with `/provider <id>`, models with `/model <id>`.
+**First run with no keys anywhere starts an interactive setup**: pick a
+provider, paste the key — it is persisted to `~/.dsh-mini/env` (fallback
+`./.env`, both gitignored) and loaded automatically on the next start.
+**Workspace instructions**: if the working directory contains an `AGENTS.md`,
+it is injected into the system prompt (`DSH_NO_AGENTS=1` disables).
 
 Architecture (engine/host seams, retrofit recipe, upgrade policy):
 `ARCHITECTURE.md`. Pitfalls and host-integration checklist:

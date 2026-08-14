@@ -3,6 +3,15 @@
 Sourcing order (see AGENTS.md): **pi-native → DSH minimal → self-written glue**.
 Terminal-first: if the bash tool already covers it, it is not a feature.
 
+## Done
+
+- [x] DeepSeek default provider (DSH's `dsh-llm-deepseek`, route
+  `deepseek-official`, `deepseek-v4-flash`); Gemini stays via the reference
+  adapter; `/provider` switch; first-run interactive key setup with
+  persistence (`~/.dsh-mini/env` / `.env` fallback) + env loader.
+- [x] `AGENTS.md` workspace-instruction injection (system prompt section,
+  order -90, `DSH_NO_AGENTS=1` to disable).
+
 ## P0 — next
 
 ### pi-ai multi-provider adapter (挖 pi, seam ①)
