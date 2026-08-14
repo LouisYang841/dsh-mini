@@ -96,6 +96,11 @@ The release artifact is fully self-contained — no npm install needed (also
 verified live on a OnePlus 15: setup → bash tool driving the phone's real
 filesystem → session persisted, all on-device):
 
+**Renderer modes**: on a real terminal the full-screen pi-tui shell
+(`@openguardrails/dsh-tui`, Claude-Code style) is the DEFAULT;
+`DSH_TUI=basic` gets the minimal chat-flow shell, `DSH_PLAIN=1` (or pipes)
+gets plain line mode for scripts/CI.
+
 ```sh
 pkg install nodejs            # Node >= 22.15 (zstd is bundled in node:zlib)
 curl -LO https://github.com/LouisYang841/dsh-mini/releases/latest/download/dsh-mini.mjs

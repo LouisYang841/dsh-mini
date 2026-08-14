@@ -32,7 +32,13 @@ explicitly — revisit with newer pi-ai); model ids follow pi-ai's catalog
 (`deepseek-v4-flash`); the CLI artifact grows to ~7.6MB from the bundled
 provider SDKs (the portable engine bundle is unaffected at 419KB).
 
-## P1 — UX from the pi-tui package we already ship
+## P1 — done (accepted on a real terminal)
+
+- [x] **Community full-screen TUI promoted to DEFAULT** (real-terminal
+  acceptance by the user); our minimal shell stays behind `DSH_TUI=basic`,
+  plain mode via `DSH_PLAIN=1`. Titles auto-mount with the cc-tui.
+
+## P1 (original) — UX from the pi-tui package we already ship
 
 - **Markdown rendering for assistant replies** (pi-tui `Markdown` component;
   `marked` is already in the bundle).

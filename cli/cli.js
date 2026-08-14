@@ -53,6 +53,10 @@ const HAS_ZSTD = typeof zstdCompress === "function";
 if (!HAS_ZSTD) console.error("[warn] node:zlib zstd unavailable (Node < 22.15): sessions will be stored uncompressed");
 // pi-tui shell when both stdio ends are terminals (pipes/CI get plain mode).
 const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
+// Renderer modes: default = the community pi-tui-based full-screen TUI
+// (@openguardrails/dsh-tui); DSH_TUI=basic = our minimal chat-flow shell;
+// DSH_PLAIN=1 or non-TTY = plain line mode.
+const USE_CC_TUI = TTY && process.env.DSH_TUI !== "basic" && !process.env.DSH_PLAIN;
 
 // CLI args: node cli.mjs [model] [--provider <id>] [--resume <id>] [--sessions]
 const ARGS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -161,7 +165,6 @@ const boot = async (ctx) => {
 	let busy = false;
 
 	// ---- renderer first: interactive setup needs it before the agent exists ----
-	const USE_CC_TUI = TTY && !!process.env.DSH_CC_TUI;
 	const ui = TTY && !USE_CC_TUI
 		? createTuiHost({
 				onLine: (line) => void handleLine(line),
@@ -527,7 +530,7 @@ mount("compaction", compactionNs.BasicCompactionEngine, {
 });
 // Titles cost one silent LLM call per session: opt-in via DSH_TITLES, or
 // auto-enabled with the community TUI (its session list expects them).
-if (process.env.DSH_TITLES || process.env.DSH_CC_TUI) {
+if (process.env.DSH_TITLES || USE_CC_TUI) {
 	mount("session-title", sessionTitleNs.SessionTitleService);
 	mount("session-title-llm", sessionTitleLlmNs);
 }
