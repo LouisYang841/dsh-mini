@@ -18,10 +18,10 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
 - [x] `AGENTS.md` workspace-instruction injection (system prompt section,
   order -90, `DSH_NO_AGENTS=1` to disable).
 - [x] **Agent modes**: `minimal` is the default for new sessions (exact
-  official Minimal persona, tools `bash`/`read` only); `standard` keeps the
-  full catalog. `--mode`/`DSH_MODE`/`/mode` switch; the active mode is a
-  durable session event so resume restores it, while legacy sessions fall
-  back to `standard`.
+  official Minimal persona, tools `bash`/`str_replace_editor` only);
+  `standard` keeps the full catalog. `--mode`/`DSH_MODE`/`/mode` switch; the
+  active mode is a durable session event so resume restores it, while legacy
+  sessions fall back to `standard`.
 - [x] **Plan-mode mount fixed**: `exit_plan_mode` is now actually registered
   (the plan-mode plugin requires its `section` config).
 

@@ -3,7 +3,8 @@
  *
  * `minimal` reproduces the DeepSeek Harness Minimal preset condition for the
  * first request: the complete one-line persona plus only the platform shell
- * and `read`. dsh-mini keeps `standard` as its previous full-catalog behavior.
+ * and `str_replace_editor`. dsh-mini keeps `standard` as its previous
+ * full-catalog behavior.
  *
  * Mode is durable session state: new sessions record a known durable event,
  * resuming sessions fold the last such event, and legacy sessions without one
@@ -70,7 +71,7 @@ function stringList(value, field) {
  */
 export function apply(ctx, config = {}) {
   const shellTools = stringList(config.shellTools ?? ['bash'], 'shellTools')
-  const commonTools = stringList(config.commonTools ?? ['read'], 'commonTools')
+  const commonTools = stringList(config.commonTools ?? ['str_replace_editor'], 'commonTools')
   const fallbackMode = config.fallbackMode ?? LEGACY_FALLBACK_MODE
   if (!isValidMode(fallbackMode)) throw new TypeError(`${name}: fallbackMode must be one of ${MODES.join(', ')}`)
 

@@ -51,7 +51,8 @@
     "@deepseek-ai/dsh-goal": "0.1.0-rc.6",
     "@deepseek-ai/dsh-goal-round-driver": "0.1.0-rc.6",
     "@deepseek-ai/dsh-plan-mode": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-goal": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-tool-goal": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tool-str-replace-editor": "0.1.0-rc.6"
   },
   "keywords": [
     "deepseek-harness",

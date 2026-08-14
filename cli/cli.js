@@ -11,6 +11,7 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
 import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
+import * as strReplaceEditorNs from "@deepseek-ai/dsh-tool-str-replace-editor";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import * as deepseekLlm from "@deepseek-ai/dsh-llm-deepseek";
 import * as commandsNs from "@deepseek-ai/dsh-commands";
@@ -419,7 +420,7 @@ const boot = async (ctx) => {
 	ctx.systemPrompt.section(bashGuidanceSection());
 	applyModeBootstrap(ctx, {
 		shellTools: ["bash"],
-		commonTools: ["read"],
+		commonTools: ["str_replace_editor"],
 		fallbackMode: LEGACY_FALLBACK_MODE,
 	});
 	ctx.skills.registerProvider(() =>
@@ -932,6 +933,7 @@ if (process.env.DSH_TITLES || USE_CC_TUI) {
 mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);
+mount("tool-str-replace-editor", strReplaceEditorNs);
 mount("tool-todo", todoTools, { allowParallelInProgress: true });
 mount("agentLoop", AgentLoop, { maxParallelToolCalls: 4 });
 root.plugin(boot).then(

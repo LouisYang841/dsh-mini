@@ -64,24 +64,24 @@ test('appendMode records a durable event and rejects unknown modes', () => {
   assert.throws(() => appendMode(agent, 'anchored'), /unknown mode/)
 })
 
-test('minimal mode replaces the prompt and exposes only bash and read', async () => {
+test('minimal mode replaces the prompt and exposes only bash and str_replace_editor', async () => {
   const listener = register({ fallbackMode: 'minimal' })
   const tools = [
     { name: 'bash' },
+    { name: 'str_replace_editor' },
     { name: 'read' },
-    { name: 'edit' },
     { name: 'todo_write' },
   ]
   const result = await assemble(listener, [{ type: 'agent-preset/selected', data: { agentPreset: 'minimal' } }], tools)
   assert.equal(result.sections.length, 1)
   assert.equal(result.sections[0].text, MINIMAL_PERSONA)
   assert.deepEqual(result.contexts, [])
-  assert.deepEqual(result.tools.map((tool) => tool.name), ['bash', 'read'])
+  assert.deepEqual(result.tools.map((tool) => tool.name), ['bash', 'str_replace_editor'])
 })
 
 test('standard mode and legacy sessions keep the full assembly', async () => {
   const listener = register({ fallbackMode: 'standard' })
-  const tools = [{ name: 'bash' }, { name: 'read' }, { name: 'edit' }]
+  const tools = [{ name: 'bash' }, { name: 'str_replace_editor' }, { name: 'edit' }]
   const standard = await assemble(listener, [{ type: 'agent-preset/selected', data: { agentPreset: 'standard' } }], tools)
   const legacy = await assemble(listener, [], tools)
   assert.equal(standard.sections.length, 2)
