@@ -105,7 +105,8 @@ builtins and a real provider adapter. Every host needs: a boot plugin with an
   rejected; merge them into one turn when converting DSH messages.
 - **Gemini model availability moves fast**: `gemini-2.5-flash` 404s for new
   keys; list live models via
-  `GET https://generativelanguage.googleapis.com/v1beta/models?key=KEY`.
+  `GET https://generativelanguage.googleapis.com/v1beta/models` with the
+  `x-goog-api-key` header (never put `key=...` in the URL).
   AI Studio free quota is PER MODEL — switch models to keep testing.
 
 ## Validation procedure (the conformance gate)
@@ -183,12 +184,16 @@ byte-for-byte. Rules:
 ## pi-native bash tool (cli/bash-tool.js + vendor-pi/)
 
 - **Prefer pi's native pieces over DSH packages when the seam allows**: the
-  bash tool vendors pi's executor verbatim (`vendor-pi/bash-executor.ts`:
+  bash tool is derived from pi's executor (`vendor-pi/bash-executor.ts`:
   streaming, ANSI/binary sanitization, 50KB truncate-tail, temp-file spill,
-  abort) and reimplements only the platform glue (local `BashOperations`:
+  abort, plus dsh-mini's timeout/env forwarding and spill completion) and
+  reimplements only the platform glue (local `BashOperations`:
   `spawn("bash", ["-c", cmd], {detached:true})` + `process.kill(-pid)`).
   This replaces the whole DSH bash stack (shell/sandbox/sandbox-policy/
-  subprocess-local/node-pty) with ONE tool definition.
+  subprocess-local/node-pty) with ONE tool definition. The tool is
+  intentionally unsandboxed (trust level == shell access), so only run it in
+  trusted workspaces; adding an approval/sandbox layer is tracked as P0
+  safety work.
 - Tool DTOs must be JSON-lossless: strip `undefined` fields
   (`...(x ? {fullOutputPath: x} : {})`) or snapshot validation fails with
   "value is not lossless JSON".
@@ -211,11 +216,12 @@ byte-for-byte. Rules:
 - **dsh-llm-deepseek**: function plugin (`apply`), provider route
   `deepseek-official`; the API key resolves from the credentials service or,
   absent one, from the env var named by `apiKeyEnv` (`DEEPSEEK_API_KEY`).
-- **AGENTS.md injection**: `ctx.systemPrompt.section({name:
-  "workspace:agents", order: -90, ...})` from the boot plugin lands in the
-  global prompt layer and reaches every agent; verify via
-  `DSH_DEBUG=1` + grep for the section marker in stderr — the debug print is
-  MULTILINE, so `grep "header.system"` alone only shows the first line.
+- **AGENTS.md injection is untrusted input**: the workspace section is
+  wrapped as advisory/untrusted and must never override system, developer,
+  user, safety, authorization, or credential rules. Use `DSH_NO_AGENTS=1`
+  to disable it; verify via `DSH_DEBUG=1` + grep for the section marker in
+  stderr — the debug print is MULTILINE, so `grep "header.system"` alone
+  only shows the first line.
 
 ## Cut-big-keep-small findings
 
@@ -293,7 +299,7 @@ byte-for-byte. Rules:
   `--provider`, pass the target mode through `DSH_MODE`, and
   `await ctx.sessions.flush(...)` before replacing the process. The raw
   `ctx.emit("session/flush", ...)` is not awaitable and can lose the outgoing
-  session's tail.
+  session's tail; use the awaited `ctx.sessions.flush(session)` API instead.
 - **Restart with `process.execve`, never spawn+exit over a live TUI**: a
   detached child inheriting the same pty starts a second raw-mode TUI while
   the parent exits; the terminal's Kitty-keyboard response (`CSI ? flags u`)
@@ -334,8 +340,9 @@ byte-for-byte. Rules:
   uses rename-based atomic publish on every platform — that is why pi
   persists fine on Termux.
 - **`process.exit()` kills the 200ms write batch**: quick `/stats`+`/exit`
-  runs persisted nothing. Exit paths must emit `session/flush` and wait
-  ~500ms (gracefulExit in cli.js; same in tui-renderer).
+  runs persisted nothing. Exit paths must `await ctx.sessions.flush(session)`
+  before scheduling `process.exit(0)` (gracefulExit in cli.js; the basic TUI
+  accepts an `onExit` flush hook).
 - Debugging on the phone: upload a small probe bundle (remember the
   node:module + fs/promises aliases), attach `.then(ok, err)` handlers to
   EVERY fiber — a parked boot fiber exits 0 with zero output.

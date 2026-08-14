@@ -8,13 +8,18 @@
 import { exec as nodeExec } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, relative, isAbsolute, sep } from "node:path";
 const execAsync = promisify(nodeExec);
 
 // File-tool backing store for the session log mock.
 const MOCK_ROOT = join(new URL(".", import.meta.url).pathname, ".mock-store");
 export function mockResolvePath(path) {
-	return join(MOCK_ROOT, path.replace(/^\/+/, ""));
+	const target = join(MOCK_ROOT, path.replace(/^\/+/, ""));
+	const rel = relative(MOCK_ROOT, target);
+	if (isAbsolute(target) && rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`))) {
+		throw new Error(`mock file path escapes MOCK_ROOT: ${path}`);
+	}
+	return target;
 }
 
 export const relayedChunks = [];
@@ -105,7 +110,7 @@ globalThis.OkHttp = MockOkHttp;
 globalThis.toolCall = async ({ name, params }) => {
 	if (name === "terminal") {
 		const command = params?.command ?? "";
-		const timeoutMs = Math.max(3000, Number(params?.timeoutMs ?? 60000));
+		const timeoutMs = Math.max(3000, Number(params?.timeoutMs ?? 15000));
 		try {
 			const { stdout, stderr } = await execAsync(command, { timeout: Math.min(timeoutMs, 300000), maxBuffer: 10 * 1024 * 1024 });
 			const output = `${stdout}${stderr}`;

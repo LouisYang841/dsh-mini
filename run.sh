@@ -44,7 +44,7 @@ QJS=""
 for c in quickjs-ng/qjs quickjs-*/qjs ../quickjs*/qjs; do [ -x "$c" ] && QJS="$c" && break; done
 if [ -n "$QJS" ]; then
 qjs_status=0
-"$QJS" -m bundle.mjs > trace.qjs.json 2> qjs.err || qjs_status=$?
+"$QJS" --std -I test-random.js -m bundle.mjs > trace.qjs.json 2> qjs.err || qjs_status=$?
 qjs_events=$(python3 -c "import json;print(sum(len(s['events']) for s in json.load(open('trace.qjs.json'))))" 2>/dev/null || echo 0)
 echo "qjs: exit=$qjs_status events=$qjs_events"
 if [ "$qjs_status" -ne 0 ]; then

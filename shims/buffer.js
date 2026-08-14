@@ -1,10 +1,13 @@
 // Minimal node:buffer shim (Uint8Array-backed).
+const TEXT_ENCODINGS = new Set([undefined, "utf8", "utf-8"]);
+
 export class Buffer extends Uint8Array {
 	static from(input, encoding) {
 		if (typeof input === "string") {
 			if (encoding === "hex" || encoding === "base64" || encoding === "base64url") {
 				return new Buffer(decodeBinary(input, encoding));
 			}
+			if (!TEXT_ENCODINGS.has(encoding)) throw new Error(`shims/buffer: unsupported encoding "${encoding}"`);
 			const bytes = [];
 			for (let i = 0; i < input.length; i++) {
 				let c = input.codePointAt(i);
@@ -20,8 +23,13 @@ export class Buffer extends Uint8Array {
 		if (input instanceof ArrayBuffer) return new Buffer(new Uint8Array(input));
 		return new Buffer(Array.from(input));
 	}
-	static alloc(size) {
-		return new Buffer(new Uint8Array(size));
+	static alloc(size, fill, encoding) {
+		const out = new Buffer(new Uint8Array(size));
+		if (fill === undefined || fill === 0) return out;
+		const bytes = typeof fill === "number" ? Uint8Array.of(fill & 0xff) : Buffer.from(fill, encoding);
+		if (bytes.length === 0) return out;
+		for (let i = 0; i < size; i++) out[i] = bytes[i % bytes.length];
+		return out;
 	}
 	static concat(list) {
 		let total = 0;
@@ -37,13 +45,14 @@ export class Buffer extends Uint8Array {
 	static isBuffer(v) {
 		return v instanceof Buffer;
 	}
-	static byteLength(str) {
-		return Buffer.from(String(str)).length;
+	static byteLength(str, encoding) {
+		return Buffer.from(String(str), encoding).length;
 	}
 	toString(encoding) {
 		if (encoding === "hex" || encoding === "base64" || encoding === "base64url") {
 			return encodeBinary(this, encoding);
 		}
+		if (!TEXT_ENCODINGS.has(encoding)) throw new Error(`shims/buffer: unsupported encoding "${encoding}"`);
 		let s = "";
 		for (let i = 0; i < this.length; i++) {
 			const b = this[i];
@@ -103,6 +112,7 @@ export class Buffer extends Uint8Array {
 function decodeBinary(input, encoding) {
 	if (encoding === "base64" || encoding === "base64url") {
 		let s = String(input).replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");
+		if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s)) throw new Error("shims/buffer: invalid base64 input");
 		while (s.length % 4) s += "=";
 		const out = [];
 		for (let i = 0; i < s.length; i += 4) {
@@ -119,7 +129,8 @@ function decodeBinary(input, encoding) {
 	if (encoding === "hex") {
 		const out = [];
 		const s = String(input).replace(/\s/g, "");
-		for (let i = 0; i + 1 < s.length; i += 2) out.push(parseInt(s.slice(i, i + 2), 16));
+		if (s.length % 2 !== 0 || /[^0-9a-fA-F]/.test(s)) throw new Error("shims/buffer: invalid hex input");
+		for (let i = 0; i < s.length; i += 2) out.push(parseInt(s.slice(i, i + 2), 16));
 		return out;
 	}
 	throw new Error("unsupported encoding: " + encoding);

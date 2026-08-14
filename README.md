@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/github/license/LouisYang841/dsh-mini)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.15-brightgreen)](#termux-android)
 [![runtime deps](https://img.shields.io/badge/runtime%20npm%20deps-0-brightgreen)](#依赖砍了多少)
-[![Termux](https://img.shields.io/badge/Termux%20verified-3DDC84?logo=android)](#为什么对termux友好)
+[![Termux](https://img.shields.io/badge/Termux%20verified-3DDC84?logo=android)](#为什么对-termux-友好)
 
 **DeepSeek Harness 核心的便携引擎 + 一个能在手机上干活的终端编程 Agent CLI。** 我们不是 fork：以 npm 消费者身份把 pi（壳）和 DSH（引擎）拼在一起，本仓库真正自研的是**五条缝、兼容层和文档**——拼装与解耦。
 

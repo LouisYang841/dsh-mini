@@ -3,7 +3,6 @@
 // ToolRuntime, AgentLoop) with a FAKE llm service, then replays five scripted
 // scenarios and prints the normalized event-sourced session traces as JSON.
 // The same bundle must produce byte-identical output on Node and QuickJS.
-import "./test-random.js";
 import "./polyfills.js";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";

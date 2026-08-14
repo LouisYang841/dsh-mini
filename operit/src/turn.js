@@ -30,31 +30,36 @@ export async function driveTurn(engine, userText) {
 	// NOTE: the session splices its event list during a turn (inbox/spliced),
 	// so always re-read agent.session.events — never cache the array.
 	let relayed = agent.session.events.length;
-	const poller = setInterval(() => {
-		const events = agent.session.events;
-		for (let i = relayed; i < events.length; i++) {
-			const event = events[i];
-			if (event.type === "assistant/chunk") {
-				const chunk = event.data?.chunk;
-				// Stream text-delta increments; block-end carries the FULL
-				// block again, so relaying it would double-print.
-				if (chunk?.type === "text-delta" && chunk.text) relayChunk(chunk.text);
-				else if (chunk?.type === "reasoning-delta" && chunk.text) relayChunk(chunk.text);
-			} else if (event.type === "tool/start" || event.type === "tool/update") {
-				const name = norm(event.data?.name);
-				if (name) relayChunk(`\n⏳ tool: ${name}`);
-			} else if (event.type === "tool/result") {
-				relayChunk(` ✔`);
+	let stopped = false;
+	const poller = (async () => {
+		while (!stopped) {
+			const events = agent.session.events;
+			for (let i = relayed; i < events.length; i++) {
+				const event = events[i];
+				if (event.type === "assistant/chunk") {
+					const chunk = event.data?.chunk;
+					// Stream text-delta increments; block-end carries the FULL
+					// block again, so relaying it would double-print.
+					if (chunk?.type === "text-delta" && chunk.text) relayChunk(chunk.text);
+					else if (chunk?.type === "reasoning-delta" && chunk.text) relayChunk(chunk.text);
+				} else if (event.type === "tool/start" || event.type === "tool/update") {
+					const name = norm(event.data?.name);
+					if (name) relayChunk(`\n⏳ tool: ${name}`);
+				} else if (event.type === "tool/result") {
+					relayChunk(` ✔`);
+				}
 			}
+			relayed = events.length;
+			await new Promise((resolve) => setTimeout(resolve, 200));
 		}
-		relayed = events.length;
-	}, 200);
+	})();
 
 	try {
 		agent.followup(message);
 		await agent.whenIdle();
 	} finally {
-		clearInterval(poller);
+		stopped = true;
+		await poller;
 	}
 
 	// Best-effort durable log: persistence must never break the turn.
@@ -70,8 +75,11 @@ export async function driveTurn(engine, userText) {
 	// deduplicated) plus usage from the usage chunk.
 	let text = "";
 	let usage = { input: 0, output: 0 };
-	const turnNumbers = agent.session.events.map((e) => e.data?.turn).filter((t) => t !== undefined);
-	const lastTurn = turnNumbers.length > 0 ? Math.max(...turnNumbers) : undefined;
+	let lastTurn;
+	for (const event of agent.session.events) {
+		const turn = event.data?.turn;
+		if (turn !== undefined && (lastTurn === undefined || turn > lastTurn)) lastTurn = turn;
+	}
 	for (const event of agent.session.events) {
 		if (lastTurn !== undefined && event.data?.turn !== lastTurn) continue;
 		if (event.type !== "assistant/chunk") continue;

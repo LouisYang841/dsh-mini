@@ -88,9 +88,7 @@ def apply(path):
 	else:
 		changed.append("accent-blue (already)")
 	if "dsh-mini patch: cap the standing panel" not in src:
-		if TODO_OLD in src:
-			if TODO_TAIL_OLD not in src:
-				missing.append("todo-cap-3 (tail anchor)")
+		if TODO_OLD in src and TODO_TAIL_OLD in src:
 			src = src.replace(TODO_OLD, TODO_NEW, 1)
 			src = src.replace(TODO_TAIL_OLD, TODO_TAIL_NEW, 1)
 			changed.append("todo-cap-3")
@@ -99,7 +97,7 @@ def apply(path):
 	else:
 		changed.append("todo-cap-3 (already)")
 	if "dsh-mini patch: typing any printable character" not in src:
-		if CLARIFY_OLD in src:
+		if CLARIFY_OLD in src and CLARIFY_HINT_OLD in src and CLARIFY_ERROR_OLD in src:
 			src = src.replace(CLARIFY_OLD, CLARIFY_NEW, 1)
 			src = src.replace(CLARIFY_HINT_OLD, CLARIFY_HINT_NEW, 1)
 			src = src.replace(CLARIFY_ERROR_OLD, CLARIFY_ERROR_NEW, 1)

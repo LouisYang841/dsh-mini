@@ -62,8 +62,9 @@ export function createTuiHost({ onLine, onInterrupt, onExit }) {
 				onInterrupt();
 			} else {
 				tui.stop();
-				const finish = onExit ? onExit() : Promise.resolve();
-				Promise.resolve(finish).finally(() => process.exit(0));
+				Promise.resolve()
+					.then(() => onExit?.())
+					.finally(() => process.exit(0));
 			}
 		}
 	});

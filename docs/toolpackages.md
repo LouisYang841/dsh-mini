@@ -25,8 +25,8 @@ tools; `standard` mode exposes them alongside the built-in catalog.
 
 ## Manifest schema
 
-A manifest is JSON. All fields except `timeoutMs`, `parameters`, and `output`
-are required.
+A manifest is JSON. All fields except `timeoutMs`, `parameters`,
+`output`, and `allowEnv` are required.
 
 ```json
 {
@@ -72,8 +72,8 @@ of silently producing a broken tool.
 
 When the model calls a toolpackage:
 
-1. dsh-mini spawns `command` with cwd set to the manifest directory and the
-   current environment inherited.
+1. dsh-mini spawns `command` with cwd set to the manifest directory and a
+   sanitized environment (safe variables plus any explicit `allowEnv`).
 2. The model arguments object is serialized as JSON and written to the child's
    stdin. The stream is then closed.
 3. The child prints **one JSON value** to stdout.

@@ -22,9 +22,17 @@ async function publishLink(existing, next) {
 		return await native.link(existing, next);
 	} catch (error) {
 		if (error?.code === "EACCES" || error?.code === "EPERM" || error?.code === "EXDEV" || error?.code === "EOPNOTSUPP" || error?.code === "ENOTSUP") {
-			await native.copyFile(existing, next, native.constants.COPYFILE_EXCL);
-			await native.unlink(existing);
-			return;
+			// link() is denied on Android. The serialized queue makes this
+			// destination check race-free among dsh-mini publishers, and
+			// rename is atomic on the same filesystem, so readers never see a
+			// partially copied JSONL file.
+			const exists = await native.stat(next).then(() => true, () => false);
+			if (exists) {
+				const conflict = new Error(`EEXIST: ${next} already exists`);
+				conflict.code = "EEXIST";
+				throw conflict;
+			}
+			return await native.rename(existing, next);
 		}
 		throw error;
 	}

@@ -17,5 +17,9 @@ const encoded = value.split("/").map((segment) => encodeURIComponent(segment)).j
 return "file://" + encoded;
 }
 
-export const URL = globalThis.URL ?? class {};
+export const URL = globalThis.URL ?? class {
+	constructor() {
+		throw new Error("node:url URL is not available in the spike shim");
+	}
+};
 export default { fileURLToPath, pathToFileURL, URL };

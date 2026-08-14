@@ -33,13 +33,21 @@ out += ch;
 continue;
 }
 const spec = first[i + 1];
+if (spec === "%") {
+i += 1;
+out += "%";
+continue;
+}
+if (spec !== "s" && spec !== "d" && spec !== "i" && spec !== "j") {
+// Unknown specifier: emit verbatim and keep the argument.
+out += "%";
+continue;
+}
 i += 1;
 const value = args[argIndex++];
 if (spec === "s") out += String(value);
 else if (spec === "d" || spec === "i") out += String(Number(value));
-else if (spec === "j") out += JSON.stringify(value);
-else if (spec === "%") out += "%";
-else out += "%" + (spec ?? "");
+else out += JSON.stringify(value);
 }
 for (; argIndex < args.length; argIndex++) out += (out ? " " : "") + (typeof args[argIndex] === "string" ? args[argIndex] : inspect(args[argIndex]));
 return out;

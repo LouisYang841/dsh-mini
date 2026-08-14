@@ -17,6 +17,7 @@ import { defineExecTool } from "./tools.js";
 import { loadSessionEvents, sessionLogPath } from "./store.js";
 
 let booted = null; // { ctx, agent, configKey }
+let booting = null; // { configKey, promise }
 
 export function isBooted() {
 	return booted !== null;
@@ -135,28 +136,37 @@ export async function bootDsh(config) {
 		if (!booted.agent) await waitEngineAgent(booted);
 		return booted;
 	}
+	if (booting && booting.configKey === configKey) return booting.promise;
 	// A new config: replace the running engine (dispose the old context).
 	if (booted) {
 		try {
-			booted.ctx.dispose();
+			await booted.ctx.root.fiber.dispose();
 		} catch {
 			// best-effort
 		}
 		booted = null;
 	}
-	booted = await createEngine(
-		config,
-		() => {
-			// __DSH_FAKE_ADAPTER (tests only) injects a scripted adapter instead
-			// of the DeepSeek transport — the fake-provider replay trick.
-			if (typeof globalThis.__DSH_FAKE_ADAPTER === "function") {
-				const fake = globalThis.__DSH_FAKE_ADAPTER(config);
-				if (fake) return fake;
-			}
-			return new DeepSeekAdapter(config);
-		},
-		"operit-main",
-	);
+	booting = {
+		configKey,
+		promise: createEngine(
+			config,
+			() => {
+				// __DSH_FAKE_ADAPTER (tests only) injects a scripted adapter instead
+				// of the DeepSeek transport — the fake-provider replay trick.
+				if (typeof globalThis.__DSH_FAKE_ADAPTER === "function") {
+					const fake = globalThis.__DSH_FAKE_ADAPTER(config);
+					if (fake) return fake;
+				}
+				return new DeepSeekAdapter(config);
+			},
+			"operit-main",
+		),
+	};
+	try {
+		booted = await booting.promise;
+	} finally {
+		booting = null;
+	}
 	return booted;
 }
 
@@ -201,7 +211,7 @@ export async function selfTest(config) {
 	} finally {
 		if (engine) {
 			try {
-				engine.ctx.dispose();
+				await engine.ctx.root.fiber.dispose();
 			} catch {
 				// best-effort
 			}

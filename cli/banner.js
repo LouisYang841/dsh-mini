@@ -122,7 +122,11 @@ export function renderBanner() {
 		r++;
 	}
 
-	const tag = mode === "plain" ? TAGLINE : `\x1b[38;2;130;140;175m${TAGLINE}\x1b[0m`;
+	const tag = mode === "plain"
+		? TAGLINE
+		: mode === "true"
+			? `\x1b[38;2;130;140;175m${TAGLINE}\x1b[0m`
+			: `\x1b[38;5;103m${TAGLINE}\x1b[0m`;
 	const width = Math.max(...lines.map((l) => l.length));
 	const pad = Math.max(0, Math.floor((width - [...TAGLINE].length) / 2));
 	out.push(" ".repeat(pad) + tag);

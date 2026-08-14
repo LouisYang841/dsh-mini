@@ -125,7 +125,7 @@ if (typeof globalThis.TextEncoder === "undefined") {
 }
 if (typeof globalThis.TextDecoder === "undefined") {
 	globalThis.TextDecoder = class TextDecoder {
-		decode(u8) {
+		decode(u8 = new Uint8Array(0)) {
 			return utf8Decode(u8);
 		}
 	};
@@ -273,48 +273,51 @@ if (typeof globalThis.queueMicrotask === "undefined") {
 }
 
 // ---- ES2022/ES2023 array & object helpers ----
+const defineNonEnumerable = (target, name, fn) => {
+	Object.defineProperty(target, name, { value: fn, writable: true, enumerable: false, configurable: true });
+};
 if (typeof Object.hasOwn === "undefined") {
 	Object.hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 }
 if (typeof Array.prototype.at === "undefined") {
-	Array.prototype.at = function at(i) {
+	defineNonEnumerable(Array.prototype, "at", function at(i) {
 		return i < 0 ? this[this.length + i] : this[i];
-	};
+	});
 }
 if (typeof String.prototype.at === "undefined") {
-	String.prototype.at = function at(i) {
+	defineNonEnumerable(String.prototype, "at", function at(i) {
 		return i < 0 ? this[this.length + i] : this[i];
-	};
+	});
 }
 if (typeof Array.prototype.findLast === "undefined") {
-	Array.prototype.findLast = function findLast(fn) {
+	defineNonEnumerable(Array.prototype, "findLast", function findLast(fn) {
 		for (let i = this.length - 1; i >= 0; i--) if (fn(this[i], i, this)) return this[i];
 		return undefined;
-	};
+	});
 }
 if (typeof Array.prototype.findLastIndex === "undefined") {
-	Array.prototype.findLastIndex = function findLastIndex(fn) {
+	defineNonEnumerable(Array.prototype, "findLastIndex", function findLastIndex(fn) {
 		for (let i = this.length - 1; i >= 0; i--) if (fn(this[i], i, this)) return i;
 		return -1;
-	};
+	});
 }
 if (typeof Array.prototype.toReversed === "undefined") {
-	Array.prototype.toReversed = function toReversed() {
+	defineNonEnumerable(Array.prototype, "toReversed", function toReversed() {
 		return this.slice().reverse();
-	};
+	});
 }
 if (typeof Array.prototype.toSpliced === "undefined") {
-	Array.prototype.toSpliced = function toSpliced(start, deleteCount, ...items) {
+	defineNonEnumerable(Array.prototype, "toSpliced", function toSpliced(start, deleteCount, ...items) {
 		const copy = this.slice();
 		copy.splice(start, deleteCount, ...items);
 		return copy;
-	};
+	});
 }
 if (typeof String.prototype.replaceAll === "undefined") {
-	String.prototype.replaceAll = function replaceAll(search, replacement) {
+	defineNonEnumerable(String.prototype, "replaceAll", function replaceAll(search, replacement) {
 		if (typeof search === "string") return this.split(search).join(replacement);
 		return this.replace(new RegExp(search.source, search.flags.includes("g") ? search.flags : search.flags + "g"), replacement);
-	};
+	});
 }
 if (typeof Promise.allSettled === "undefined") {
 	Promise.allSettled = (ps) => Promise.all(Array.from(ps, (p) => Promise.resolve(p).then((v) => ({ status: "fulfilled", value: v }), (r) => ({ status: "rejected", reason: r }))));
@@ -350,8 +353,13 @@ if (typeof globalThis.performance === "undefined") {
 // belong here in the compat layer, never in the DSH core.
 {
 	const origFnToString = Function.prototype.toString;
-	Function.prototype.toString = function toString() {
-		const s = origFnToString.call(this);
-		return s.replace(/\{\s*\[native code\]\s*\}/g, "{ [native code] }");
-	};
+	Object.defineProperty(Function.prototype, "toString", {
+		value: function toString() {
+			const s = origFnToString.call(this);
+			return s.replace(/\{\s*\[native code\]\s*\}/g, "{ [native code] }");
+		},
+		writable: true,
+		enumerable: false,
+		configurable: true,
+	});
 }

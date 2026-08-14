@@ -1,5 +1,7 @@
-// Vendored verbatim from @earendil-works/pi coding-agent
-// (packages/coding-agent/src/core/bash-executor.ts, MIT), import paths adapted.
+// Derived from @earendil-works/pi coding-agent
+// (packages/coding-agent/src/core/bash-executor.ts, MIT). Import paths were
+// adapted; dsh-mini adds BashOperations, timeout/env forwarding, and spill-file
+// completion handling around the upstream execution loop.
 /**
  * Bash command execution with streaming support and cancellation.
  *
@@ -41,6 +43,10 @@ export interface BashExecutorOptions {
 	onChunk?: (chunk: string) => void;
 	/** AbortSignal for cancellation */
 	signal?: AbortSignal;
+	/** Optional command timeout forwarded to BashOperations.exec */
+	timeout?: number;
+	/** Optional child environment forwarded to BashOperations.exec */
+	env?: Record<string, string | undefined>;
 }
 
 export interface BashResult {
@@ -76,6 +82,7 @@ export async function executeBashWithOperations(
 
 	let tempFilePath: string | undefined;
 	let tempFileStream: WriteStream | undefined;
+	let spillFailed = false;
 	let totalBytes = 0;
 
 	const ensureTempFile = () => {
@@ -84,9 +91,17 @@ export async function executeBashWithOperations(
 		}
 		const id = randomBytes(8).toString("hex");
 		tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
-		tempFileStream = createWriteStream(tempFilePath);
+		const stream = createWriteStream(tempFilePath);
+		tempFileStream = stream;
+		// Attach the error listener at creation time. A write-stream error
+		// before finishTempFile() would otherwise be an uncaught exception.
+		stream.once("error", () => {
+			spillFailed = true;
+			tempFileStream = undefined;
+			tempFilePath = undefined;
+		});
 		for (const chunk of outputChunks) {
-			tempFileStream.write(chunk);
+			stream.write(chunk);
 		}
 	};
 
@@ -125,15 +140,16 @@ export async function executeBashWithOperations(
 	};
 
 	// WriteStream.end() only STARTS finalization. Await finish/close before
-	// returning a spill path so the caller never sees a missing/partial file.
+	// returning a spill path, and omit the path if the spill failed so callers
+	// never read a truncated file as the complete output.
 	const finishTempFile = () => {
-		if (!tempFileStream) return Promise.resolve();
+		if (!tempFileStream) return Promise.resolve(!spillFailed);
 		const stream = tempFileStream;
 		tempFileStream = undefined;
-		return new Promise<void>((resolve) => {
-			stream.once("finish", () => resolve());
-			stream.once("close", () => resolve());
-			stream.once("error", () => resolve());
+		return new Promise<boolean>((resolve) => {
+			stream.once("finish", () => resolve(true));
+			stream.once("close", () => resolve(!spillFailed));
+			stream.once("error", () => resolve(false));
 			stream.end();
 		});
 	};
@@ -146,13 +162,13 @@ export async function executeBashWithOperations(
 		if (truncationResult.truncated) {
 			ensureTempFile();
 		}
-		await finishTempFile();
+		const spillOk = await finishTempFile();
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
 			exitCode: cancelled ? undefined : (exitCode ?? undefined),
 			cancelled,
 			truncated: truncationResult.truncated,
-			fullOutputPath: tempFilePath,
+			...(spillOk && tempFilePath !== undefined ? { fullOutputPath: tempFilePath } : {}),
 		};
 	};
 
@@ -160,6 +176,8 @@ export async function executeBashWithOperations(
 		const result = await operations.exec(command, cwd, {
 			onData,
 			signal: options?.signal,
+			timeout: options?.timeout,
+			env: options?.env,
 		});
 
 		return await buildResult(result.exitCode, options?.signal?.aborted ?? false);

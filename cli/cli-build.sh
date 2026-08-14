@@ -2,7 +2,14 @@
 # Build the dsh-mini CLI for Node (node:* builtins stay native).
 set -e
 cd "$(dirname "$0")/.."
-[ -e node_modules ] || ln -s /home/ubuntu/dsh/node_modules node_modules
+if [ ! -e node_modules ] && [ ! -L node_modules ]; then
+  echo "node_modules missing: run 'npm install' (add --ignore-scripts on Termux)" >&2
+  exit 1
+fi
+if [ -L node_modules ] && [ ! -e node_modules ]; then
+  echo "node_modules is a dangling symlink: run 'npm install'" >&2
+  exit 1
+fi
 ESBUILD="${ESBUILD:-}"
 if [ -z "$ESBUILD" ]; then
   if command -v npx >/dev/null 2>&1; then ESBUILD="npx --yes esbuild"

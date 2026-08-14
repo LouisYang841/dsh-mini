@@ -16,7 +16,7 @@
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -121,6 +121,13 @@ function toolEnv(allowEnv) {
 
 function killProcessTree(child) {
   if (child.pid === undefined) return
+  if (process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    } catch {
+      // fall through to the direct kill below
+    }
+  }
   try {
     process.kill(-child.pid, 'SIGKILL')
   } catch {
