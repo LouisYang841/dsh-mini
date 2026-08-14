@@ -119,9 +119,6 @@ CLI build.
 
 ## Roadmap
 
-- [x] pi-tui shell (the real `@earendil-works/pi-tui` framework; session events → components)
-- [x] bash tool: pi's native executor (vendored `vendor-pi/`, MIT) wrapped as a DSH tool; process-group kill, timeout, truncation, temp-file spill
-- [x] `/stats` (turns/messages/tools/token totals from the event log)
-- [ ] Compaction for long sessions (dsh-compaction + dsh-compaction-basic + dsh-token-meter — pure packages, trigger wiring TBD)
-- [ ] Sandbox policy for the bash tool (dsh-sandbox-policy + escalation)
-- [ ] Operit QuickJS host bridge (long-lived event loop + JNI bridge)
+Feature audit with sourcing decisions (pi-native → DSH minimal → self-written
+glue), priorities, and a deliberate skip list: `ROADMAP.md`. Next up: the
+pi-ai multi-provider adapter (seam ①), then pi-tui Markdown/autocomplete.
