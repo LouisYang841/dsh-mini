@@ -26,6 +26,8 @@ $ESBUILD main.js \
   --platform=neutral \
   --target=es2016 \
   --outfile=bundle.mjs \
+  --minify \
+  --tree-shaking=true \
   --log-level=warning \
   --alias:node:crypto=./shims/crypto.js \
   --alias:node:path=./shims/path.js \
