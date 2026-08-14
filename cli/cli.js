@@ -300,7 +300,7 @@ const boot = async (ctx) => {
 		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"})`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-		console.log("commands: /clear  /model <id>  /sessions  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
+		console.log("commands: /clear  /model [id]  /provider [id]  /sessions  /stats  /exit");
 		console.log("");
 	}
 
@@ -313,6 +313,12 @@ const boot = async (ctx) => {
 				process.exit(0);
 			}
 			if (trimmed === "") return;
+			if (trimmed === "/provider") {
+				const row = "providers: " + Object.keys(PROVIDER_DEFAULTS).join(", ") + "\n/model <id> switches models; set the provider's env key to enable its route";
+				if (ui) ui.addToolResult(row, false);
+				else console.log(row);
+				return;
+			}
 			if (trimmed.startsWith("/provider ")) {
 				const next = trimmed.slice(10).trim();
 				if (next && PROVIDER_DEFAULTS[next]) {
@@ -370,6 +376,12 @@ const boot = async (ctx) => {
 					if (ui) ui.addToolResult(row, false);
 					else console.log(row);
 				}
+				return;
+			}
+			if (trimmed === "/model") {
+				const row = "usage: /model <id>   (current: " + currentModel + ")";
+				if (ui) ui.addToolResult(row, false);
+				else console.log(row);
 				return;
 			}
 			if (trimmed.startsWith("/model ")) {
@@ -513,7 +525,9 @@ mount("compaction", compactionNs.BasicCompactionEngine, {
 	auto: true,
 	thresholdRatio: Number(process.env.DSH_COMPACT_RATIO ?? 0.8),
 });
-if (process.env.DSH_TITLES) {
+// Titles cost one silent LLM call per session: opt-in via DSH_TITLES, or
+// auto-enabled with the community TUI (its session list expects them).
+if (process.env.DSH_TITLES || process.env.DSH_CC_TUI) {
 	mount("session-title", sessionTitleNs.SessionTitleService);
 	mount("session-title-llm", sessionTitleLlmNs);
 }

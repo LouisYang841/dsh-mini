@@ -252,6 +252,20 @@ byte-for-byte. Rules:
   provider, gated behind `DSH_TITLES=1` — each new session costs one silent
   model call; never default-on for free-tier keys.
 
+## Final wiring pass findings
+
+- **Bare slash commands fall through to the model**: `/provider` without an
+  argument missed the `startsWith("/provider ")` guard (trailing space) and
+  went to the agent as a prompt — the agent then explored the repo with bash.
+  Guard bare forms (`trimmed === "/x"`) BEFORE the prefixed forms.
+- **cc-tui piped-input timing**: input piped at pty creation is consumed
+  before the TUI's raw-mode StdinBuffer mounts; delay the send a few seconds
+  (`(sleep 6; printf '...\r')`) and the full cycle works — model wait
+  spinner, reply, "Completed", token/cache status, steering hints.
+- The community TUI consumes our services directly (tokenMeter feeds its
+  status bar; persistence/skills/commands/ask-user all wired); titles
+  auto-mount with DSH_CC_TUI because its session list expects them.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is
