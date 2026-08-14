@@ -4,11 +4,13 @@
 跑在 Operit 的 JS 运行时里，工具走 Operit 的触手（终端/文件/网络），
 UI 是 Operit 的聊天界面。引擎一行未改（一致性门守门）。
 
-## 已验证（Node + mock Operit 全局）
+## 已验证（Node mock + 真 QuickJS）
 
-`node mocks/smoke.mjs`（需 DEEPSEEK_API_KEY）：
+`node mocks/smoke.mjs`（需 DEEPSEEK_API_KEY）+ `./quickjs-2026-06-04/qjs -m mocks/qjs-smoke.mjs`：
 - 场景 A：假 provider 回放 → 引擎 + todo 工具全链路（`todo/write` 事件）
+- 场景 A2：exec 工具走 mock `terminal` 桥 → 输出进入 `tool/result`
 - 场景 B：真 DeepSeek API 走 mock OkHttp 流式传输 → 完整回复 + chunk 转发
+- QuickJS：引擎 + 工具调度在真 QuickJS 上跑通（最接近 Operit 运行时）
 - 构建产物 `dist/main.js` ≈ 1.0MB（commonjs, es2016——ALS 前奏要求 async 降级）
 
 ## 装进 Operit（两步，无需重编 APK）
@@ -28,8 +30,10 @@ UI 是 Operit 的聊天界面。引擎一行未改（一致性门守门）。
 
 ## 关键实现点（换设备时先看这里）
 
-- **工具名映射**：`src/tools.js` 的 `OPERIT_TOOL_NAMES`——exec 目前假设
-  `shell_exec`（StandardShellToolExecutor）；手机上不对就改这里，mock 同名。
+- **工具名映射**：`src/tools.js` 的 `OPERIT_TOOL_NAMES.exec = "terminal"`——取自
+  Operit 权威工具表（assets/packages/super_admin.js）：Ubuntu proot 环境、
+  sdcard/storage 已挂载；参数 `command` + `timeoutMs`（**字符串**，最低 3000）
+  + `background`。mock 同名。
 - **es2016 是硬要求**：`build.mjs` 的 target 不能升回 es2020——ALS 前奏依赖
   async 降级，否则工具调度静默失效（模型 tool call 被丢弃）。
 - **传输层**：`src/llm-adapter.js` 用 Operit 的 `OkHttp` + `onIntermediateResult`

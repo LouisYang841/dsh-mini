@@ -50,3 +50,19 @@ await build({
 
 const size = readFileSync(root + "dist/main.js").length;
 console.log(`built: operit/dist/main.js (${size} bytes)`);
+
+// ESM variant for the QuickJS verification harness (qjs -m cannot load CJS).
+await build({
+	entryPoints: [root + "src/main.js"],
+	outfile: root + "dist/main.esm.mjs",
+	bundle: true,
+	format: "esm",
+	platform: "neutral",
+	target: "es2016",
+	alias: nodeAliases,
+	mainFields: ["module", "main"],
+	logLevel: "warning",
+});
+
+const esmSize = readFileSync(root + "dist/main.esm.mjs").length;
+console.log(`built: operit/dist/main.esm.mjs (${esmSize} bytes)`);

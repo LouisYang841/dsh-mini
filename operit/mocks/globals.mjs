@@ -95,9 +95,9 @@ class MockOkHttp {
 globalThis.OkHttp = MockOkHttp;
 
 globalThis.toolCall = async ({ name, params }) => {
-	if (name === "shell_exec") {
-		const command = params?.command ?? params?.cmd ?? "";
-		const timeoutMs = Number(params?.timeout_ms ?? params?.timeoutMs ?? 60000);
+	if (name === "terminal") {
+		const command = params?.command ?? "";
+		const timeoutMs = Math.max(3000, Number(params?.timeoutMs ?? 60000));
 		try {
 			const { stdout, stderr } = await execAsync(command, { timeout: Math.min(timeoutMs, 300000), maxBuffer: 10 * 1024 * 1024 });
 			const output = `${stdout}${stderr}`;

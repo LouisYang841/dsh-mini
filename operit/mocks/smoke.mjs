@@ -53,6 +53,42 @@ class FakeAdapter extends LlmAdapter {
 	}
 }
 
+class ExecFakeAdapter extends LlmAdapter {
+	providerInfo(provider) {
+		return { id: provider, name: "fake" };
+	}
+	resolveModel(provider, model) {
+		return Promise.resolve({ provider, id: model, name: model, context: { contextWindow: 100000 } });
+	}
+	stream() {
+		const step = (globalThis.__STEP = (globalThis.__STEP ?? 0) + 1);
+		const chunks =
+			step === 1
+				? [
+						{ type: "block-start", index: 0, blockType: "tool-call" },
+						{ type: "tool-call-delta", index: 0, id: "call-0", name: "exec", argumentsDelta: EXEC_ARGS },
+						{ type: "block-end", index: 0, block: { type: "tool-call", id: "call-0", name: "exec", arguments: EXEC_ARGS } },
+						{ type: "finish", reason: { kind: "stop" } },
+					]
+				: [
+						{ type: "block-start", index: 0, blockType: "text" },
+						{ type: "text-delta", index: 0, text: "command ran" },
+						{ type: "block-end", index: 0, block: { type: "text", text: "command ran" } },
+						{ type: "finish", reason: { kind: "stop" } },
+					];
+		let i = 0;
+		return {
+			[Symbol.asyncIterator]() {
+				return {
+					async next() {
+						return i < chunks.length ? { value: chunks[i++], done: false } : { done: true };
+					},
+				};
+			},
+		};
+	}
+}
+
 // Load the commonjs bundle explicitly (spike's package.json is type:module,
 // so Node insists on .cjs for a require of local files).
 import { createRequire } from "node:module";
@@ -75,6 +111,18 @@ const todoWrites = engineA.agent.session.events.filter((e) => e.type === "todo/w
 console.log("\n[A] todo/write events:", todoWrites.length);
 if (todoWrites.length !== 1) throw new Error("A: expected exactly 1 todo/write event");
 console.log("[A] PASS: engine + todo tool + fake-provider turn");
+
+// ---- Scenario A2: exec tool through the mock terminal bridge ----
+const EXEC_ARGS = JSON.stringify({ command: "echo exec-works" });
+globalThis.__DSH_FAKE_ADAPTER = () => new ExecFakeAdapter();
+const engineA2 = await bootDsh({ apiKey: "fake-key-654321", modelName: "fake-1" });
+globalThis.__STEP = 0;
+await driveTurn(engineA2, "run a command");
+const execResults = engineA2.agent.session.events.filter((e) => e.type === "tool/result");
+const execText = JSON.stringify(execResults.map((e) => e.data?.message?.content ?? ""));
+console.log("[A2] tool/result events:", execResults.length, execText.slice(0, 160));
+if (!execText.includes("exec-works")) throw new Error("A2: exec output missing");
+console.log("[A2] PASS: exec tool through the mock terminal bridge");
 
 // ---- Scenario B: live DeepSeek turn (no tools needed) ----
 const key = process.env.DEEPSEEK_API_KEY;

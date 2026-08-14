@@ -1,15 +1,18 @@
 // DSH tool over Operit's tentacles: everything routes through the
 // global toolCall({ name, params, options }) bridge.
 //
-// Operit tool names live in its Kotlin tool registry; adjust this map on
-// device if a name differs (the mocks use the same names, so Node-side
-// verification stays consistent with whatever we set here).
+// Tool names/params below come from Operit's authoritative registry
+// (app/src/main/assets/packages/super_admin.js):
+//   terminal  — run commands in the app's Ubuntu (proot) environment with
+//               sdcard/storage mounted; session-persistent cwd; params:
+//               command (required), background ("true"/"false"),
+//               timeoutMs (STRING, min 3000; foreground default 15s).
+//   shell     — direct Android shell via Shizuku/Root (pm/am level).
 
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
 export const OPERIT_TOOL_NAMES = {
-	// StandardShellToolExecutor — the phone's terminal/shell.
-	exec: "shell_exec",
+	exec: "terminal",
 };
 
 function norm(value) {
@@ -41,10 +44,11 @@ export function defineExecTool() {
 	return defineTool({
 		name: "exec",
 		description:
-			"Execute a shell command in the phone's terminal and return the combined output (stdout+stderr). Use it for anything the read/write tools do not cover; pass timeoutMs for long-running commands.",
+			"Execute a shell command in Operit's Ubuntu terminal (sdcard/storage mounted, persistent working directory) and return the combined output. Prefer read/write tools for plain file work; always pass timeoutMs for long-running commands (minimum 3000).",
 		parameters: {
 			command: { type: "string", required: true, description: "The shell command to run." },
-			timeoutMs: { type: "number", description: "Optional timeout in milliseconds." },
+			timeoutMs: { type: "number", description: "Optional timeout in milliseconds (minimum 3000; default 15000)." },
+			background: { type: "boolean", description: "Run in background and return immediately (no output captured)." },
 		},
 		output: {
 			schema: {
@@ -64,7 +68,10 @@ export function defineExecTool() {
 					name: OPERIT_TOOL_NAMES.exec,
 					params: {
 						command: args.command,
-						...(args.timeoutMs !== undefined ? { timeout_ms: args.timeoutMs } : {}),
+						...(args.background === true ? { background: "true" } : {}),
+						...(args.timeoutMs !== undefined
+							? { timeoutMs: String(Math.max(3000, Math.floor(args.timeoutMs))) }
+							: {}),
 					},
 				});
 			} catch (error) {
