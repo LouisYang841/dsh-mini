@@ -1,20 +1,65 @@
 # dsh-mini
 
-**DeepSeek Harness 核心的便携引擎 + 一个能干的终端编程 Agent CLI。** pi 的壳（真 `@earendil-works/pi-tui`），DSH 的引擎（事件溯源会话、工具、持久化），我们只负责拼装与解耦。
+**DeepSeek Harness 核心的便携引擎 + 一个能在手机上干活的终端编程 Agent CLI。** 我们不是 fork：以 npm 消费者身份把 pi（壳）和 DSH（引擎）拼在一起，本仓库真正自研的是**五条缝、兼容层和文档**——拼装与解耦。
 
-- **一条命令安装**（Node ≥ 22.15，Termux 先 `pkg install nodejs`）：
+## 这是什么
 
-  ```sh
-  curl -fsSL https://github.com/LouisYang841/dsh-mini/raw/main/scripts/install.sh | sh
-  dsh-mini
-  ```
+- **引擎原样来自 DSH 官方包**：事件溯源会话、turn/step 状态机、工具调度、压缩、skills——`@deepseek-ai/dsh-*` 锁版直用，一行不改
+- **壳来自 pi 生态**：真 `@earendil-works/pi-tui` 框架 + 社区 `@openguardrails/dsh-tui` 全屏界面（默认）
+- **我们能替换的只有缝**：provider 换、文件系统换、持久化换、UI 换，引擎不动
 
-- **默认全屏 TUI**（Claude Code 风格）；`DSH_TUI=basic` 简易壳，`DSH_PLAIN=1` 纯文本
-- **Provider**：DeepSeek 默认（官方直连 + pi-ai 双路由）、Gemini、OpenAI / Anthropic / OpenRouter（环境变量存在即启用）
-- **工具**：bash（pi 原生执行器）、read/write/edit/list、todo、skills——bash 能覆盖的不重复造轮子
-- **持久化**：zstd JSONL 会话，`--resume`/`--sessions` 随时回访（Android/Termux 已实测）
-- **架构**：五条缝（`ARCHITECTURE.md`）、决策记录（`DECISIONS.md`）、坑库 skill（`skills/`）——别人拿这份成品改装到其他 harness 只需换缝
-- **许可证**：MIT；拼装组件的归属声明见 `THIRD_PARTY_LICENSES.md`
+## 依赖砍了多少
+
+| | 官方 DSH | dsh-mini |
+|---|---|---|
+| @deepseek-ai 包 | 188 个 | 构建期 13 个（+ pi-tui 1 个） |
+| 默认 profile 插件 | ~90 个 | ~27 个（全纯 JS，零原生模块） |
+| 运行时 npm 依赖 | 全家桶 | **0 个**（产物自包含） |
+| 安装体积 | **359MB** node_modules | **7.6MB 单文件**（约 47 倍缩减） |
+| 便携引擎 | — | **419KB**，零 Node 内置依赖 |
+
+数字来源：官方安装的 node_modules 实测 359MB；我们的构建期依赖只保留直接 import 的 14 个包（全部 devDependencies，`npm install --omit=dev` 装 0 个）。
+
+## 为什么对 Termux 友好
+
+- **唯一运行时要求：Node ≥ 22.15**——zstd 内置于 `node:zlib`，无原生模块、无编译
+- **一条命令安装**：`curl | sh`，下载单个 7.6MB 自包含文件 + 26 行 launcher，npm 都不需要
+- **bash 工具直接打手机真实文件系统**（OnePlus 15 / Termux 实测：ls、建文件、跑脚本）
+- **为 Android 修过的真坑**（skill 里有记录）：SELinux 禁硬链接 → 持久化降级为 rename 原子发布；`exit` 与 200ms 写批的时序 → 退出前强制 flush
+- **数据和密钥都在手机本地**：会话 JSONL 在 `~/.dsh-mini/sessions`，密钥可从本机 pi 配置导入、不出设备
+- 三套界面按环境自适应：默认全屏 TUI / `DSH_TUI=basic` 简易壳 / `DSH_PLAIN=1` 纯文本（管道与脚本友好）
+
+## pi 和 DSH 是怎么低耦合焊在一起的
+
+五条缝（完整契约见 `ARCHITECTURE.md`）：
+
+1. **LLM 适配器**——DSH 官方 DeepSeek 直连 + 官方 pi-ai 多 provider（OpenAI/Anthropic/OpenRouter，环境变量存在即启用）+ 自写 Gemini 作为缝的参考实现
+2. **文件系统服务**——官方 `dsh-fs-local`（koffi 仅 Windows 惰性加载，Linux/Termux 等效纯包）；`node-fs.js` 是非 Node 宿主的契约参考
+3. **持久化后端**——官方 JSONL 后端 + 我们的 `shims/fs-promises.js` 兼容层（Android 专属修复）
+4. **Node API 面 shims**——纯 JS 重实现 + "大声失败"桩：核心一旦越界立刻报错
+5. **引擎面 polyfills**——QuickJS/V8 等引擎差异归一化（同 bundle 在 Node 与 QuickJS 上产生**字节级一致**的事件序列）
+
+## 这个 repo 如何支持再拼装与扩展
+
+- `ARCHITECTURE.md`：五缝 + 六步改装配方——把引擎装进任何 harness/agent app
+- `DECISIONS.md`：ADR-0001（为什么组装而不是 fork 官方）+ ADR-0002（砍大头留小头判据）
+- `skills/`：近 50 条实踩坑（cordis 语义、引擎差异、Android、配额、发布），agent 可通过内置 `skill` 工具现场加载
+- **conformance 门**：假 provider 回放 + 字节级基线（`run.sh`）——上游升版、引擎改动全有客观验收，且零 API 配额
+- `AGENTS.md`：给任何 coding agent（包括 dsh-mini 自己）的工程规矩
+
+## 快速开始
+
+```sh
+# 任意 Node ≥ 22.15 机器（Termux 先 pkg install nodejs）
+curl -fsSL https://github.com/LouisYang841/dsh-mini/raw/main/scripts/install.sh | sh
+dsh-mini
+```
+
+首次运行无密钥会交互询问 provider 并持久化（`~/.dsh-mini/env`）。DeepSeek 默认；`/provider` 切换，`/model` 换型号，`--resume`/`--sessions` 回访会话。
+
+## 许可证
+
+自身代码 MIT；全部拼装组件的归属声明见 `THIRD_PARTY_LICENSES.md`（随 release 分发）。
 
 ---
 
