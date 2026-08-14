@@ -7,7 +7,15 @@
 
 import { exec as nodeExec } from "node:child_process";
 import { promisify } from "node:util";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 const execAsync = promisify(nodeExec);
+
+// File-tool backing store for the session log mock.
+const MOCK_ROOT = join(new URL("..", import.meta.url).pathname, ".mock-store");
+export function mockResolvePath(path) {
+	return join(MOCK_ROOT, path.replace(/^\/+/, ""));
+}
 
 export const relayedChunks = [];
 
@@ -106,6 +114,20 @@ globalThis.toolCall = async ({ name, params }) => {
 			const output = `${error.stdout ?? ""}${error.stderr ?? ""}${error.message ?? error}`;
 			return { success: error.code === 0, result: output || "(no output)" };
 		}
+	}
+	if (name === "file_exists") {
+		return { success: true, result: String(existsSync(mockResolvePath(params?.path ?? ""))) };
+	}
+	if (name === "read_file_full") {
+		const target = mockResolvePath(params?.path ?? "");
+		if (!existsSync(target)) return { success: false, error: "not found" };
+		return { success: true, content: readFileSync(target, "utf8") };
+	}
+	if (name === "write_file") {
+		const target = mockResolvePath(params?.path ?? "");
+		mkdirSync(dirname(target), { recursive: true });
+		writeFileSync(target, String(params?.content ?? ""), "utf8");
+		return { success: true, result: "written" };
 	}
 	return { success: false, error: `mock toolCall: unknown tool "${name}"` };
 };

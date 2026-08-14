@@ -9,9 +9,17 @@ UI 是 Operit 的聊天界面。引擎一行未改（一致性门守门）。
 `node mocks/smoke.mjs`（需 DEEPSEEK_API_KEY）+ `./quickjs-2026-06-04/qjs -m mocks/qjs-smoke.mjs`：
 - 场景 A：假 provider 回放 → 引擎 + todo 工具全链路（`todo/write` 事件）
 - 场景 A2：exec 工具走 mock `terminal` 桥 → 输出进入 `tool/result`
+- 场景 A3：会话事件持久化为 **JSONL（无 zstd）**，重启后可从日志读回
 - 场景 B：真 DeepSeek API 走 mock OkHttp 流式传输 → 完整回复 + chunk 转发
 - QuickJS：引擎 + 工具调度在真 QuickJS 上跑通（最接近 Operit 运行时）
 - 构建产物 `dist/main.js` ≈ 1.0MB（commonjs, es2016——ALS 前奏要求 async 降级）
+
+**持久化现状**：`src/store.js` 通过 Operit 文件工具（write_file/
+read_file_full/file_exists）把会话事件追加写入
+`dshmini/sessions/main.jsonl`（read-modify-write，保留最近 4000 条，
+失败不阻断 turn）。这是"数据级"持久化；**恢复连续会话**（重启后把日志
+重建为活 agent）需要 SessionPersistence 服务契约——Operit 的 QuickJS
+无同步 fs，官方 jsonl 插件跑不了，下一步自写最小契约实现。
 
 ## 装进 Operit（两步，无需重编 APK）
 

@@ -124,6 +124,19 @@ console.log("[A2] tool/result events:", execResults.length, execText.slice(0, 16
 if (!execText.includes("exec-works")) throw new Error("A2: exec output missing");
 console.log("[A2] PASS: exec tool through the mock terminal bridge");
 
+// ---- Scenario A3: durable session log (no zstd) round-trip ----
+globalThis.__DSH_SESSION_PATH = "smoke/session-a3.jsonl";
+globalThis.__DSH_FAKE_ADAPTER = () => new FakeAdapter();
+const { sessionLogPath, loadSessionEvents } = require(smokeCjs);
+const engineA3 = await bootDsh({ apiKey: "fake-key-999999", modelName: "fake-1" });
+globalThis.__STEP = 0;
+await driveTurn(engineA3, "persist this turn");
+const persisted = await loadSessionEvents();
+const persistedTodo = persisted.filter((e) => e.type === "todo/write").length;
+console.log("[A3] persisted events:", persisted.length, "todo/write in log:", persistedTodo);
+if (persistedTodo < 1) throw new Error("A3: persisted log missing the todo/write event");
+console.log("[A3] PASS: session events persist to JSONL (no zstd)");
+
 // ---- Scenario B: live DeepSeek turn (no tools needed) ----
 const key = process.env.DEEPSEEK_API_KEY;
 if (!key) {

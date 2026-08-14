@@ -10,6 +10,7 @@
 
 import { bootDsh, isBooted, currentEngine } from "./engine.js";
 import { driveTurn } from "./turn.js";
+import { loadSessionEvents, sessionLogPath } from "./store.js";
 
 const PROVIDER_ID = "dshmini_deepseek";
 const PROVIDER_NAME = "DSH mini (DeepSeek)";
@@ -95,4 +96,4 @@ export function registerToolPkg() {
 	return true;
 }
 
-export { sendMessage, bootDsh, driveTurn, currentEngine };
+export { sendMessage, bootDsh, driveTurn, currentEngine, loadSessionEvents, sessionLogPath };

@@ -3,6 +3,7 @@
 // sendIntermediateResult({ chunk }) and tool progress echoed as dim notes.
 
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { appendSessionEvents } from "./store.js";
 
 function norm(value) {
 	return value == null ? "" : String(value);
@@ -54,6 +55,15 @@ export async function driveTurn(engine, userText) {
 		await agent.whenIdle();
 	} finally {
 		clearInterval(poller);
+	}
+
+	// Best-effort durable log: persistence must never break the turn.
+	try {
+		await appendSessionEvents(engine);
+	} catch (error) {
+		if (typeof console !== "undefined" && console.warn) {
+			console.warn("[dshmini] session persist skipped:", String(error?.message || error));
+		}
 	}
 
 	// Collect the latest turn's final text (block-end only — complete and

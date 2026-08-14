@@ -14,6 +14,7 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import { DeepSeekAdapter } from "./llm-adapter.js";
 import { defineExecTool } from "./tools.js";
+import { loadSessionEvents, sessionLogPath } from "./store.js";
 
 let booted = null; // { ctx, agent, configKey }
 
@@ -36,6 +37,19 @@ const boot = async (ctx) => {
 	ctx.tools.register(defineExecTool());
 	// create() returns the agent object directly (see cli/cli.js makeAgent).
 	booted.agent = ctx.agentLoop.create("operit-main", { provider: "deepseek", model: booted.config.modelName }, { cwd: "/" });
+	// Best-effort: surface the persisted log for diagnostics (full resume
+	// continuity needs the SessionPersistence contract — README).
+	loadSessionEvents().then(
+		(events) => {
+			booted.persisted = { path: sessionLogPath(), events: events.length };
+			if (typeof console !== "undefined" && console.log) {
+				console.log(`[dshmini] persisted log: ${events.length} events at ${sessionLogPath()}`);
+			}
+		},
+		() => {
+			booted.persisted = { path: sessionLogPath(), events: 0 };
+		},
+	);
 };
 boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop"];
 
