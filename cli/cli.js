@@ -615,7 +615,7 @@ mount("token-meter", tokenMeterNs.TokenMeter);
 mount("tool-ask-user", toolAskUserNs);
 mount("skills", skillNs.SkillRegistry);
 mount("session-reference", sessionRefNs.default);
-mount("session-query", sessionQueryNs.default);
+mount("session-query", sessionQueryNs.default, { path: join(dirname(SESSIONS_DIR), "session-query.sqlite") });
 mount("session-projection", projectionNs.SessionProjectionRegistry);
 mount("session-projection-cache", projectionCacheNs.SessionProjectionCache);
 mount("storage", storageNs.Storage);

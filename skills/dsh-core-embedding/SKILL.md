@@ -41,7 +41,12 @@ builtins and a real provider adapter. Every host needs: a boot plugin with an
    but `todo_write` never registers (`unknown tool "todo_write"`). Always
    mount it as `root.plugin(ns, { allowParallelInProgress: true })`, and
    probe `ctx.tools.view(...).visible` for the tool names you expect after
-   mounting.
+   mounting. **Same trap, second victim:** `dsh-session-query-sqlite`'s
+   Config requires `path` (no default) — mount it with
+   `{ path: join(dirname(SESSIONS_DIR), "session-query.sqlite") }` or the
+   service never registers and the community TUI's `/resume` shows
+   "Resume is not available: session query is not mounted" (the TUI checks
+   the `sessionQuery` fiber state and treats FAILED as unmounted).
 4. **Plugin `Config` must be a schemastery schema** (`z.object({...})`), not
    a plain object. A plain object fails cordis config validation with
    `Cannot read properties of undefined (reading 'validate')` — reported on
