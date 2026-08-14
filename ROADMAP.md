@@ -87,10 +87,8 @@ provider SDKs (the portable engine bundle is unaffected at 419KB).
   huge session; the replay harness has a pending TODO (the range selector
   needs a multi-turn surface with balanced boundaries).
 - [x] **Session titles**: `dsh-session-title` + `dsh-session-title-first-
-  prompt-llm` (pure) mounted behind `DSH_TITLES=1` (one silent LLM call per
-  session — opt-in by default).
-- **Session titles**: `dsh-session-title-first-prompt-llm` (LLM titles for
-  `/sessions`). LOW.
+  prompt-llm` (pure) mounted behind `DSH_TITLES=1` (disabled by default;
+  enabling it costs one silent LLM call per session).
 
 ## P3 — nice-to-have
 

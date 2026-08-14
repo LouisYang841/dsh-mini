@@ -1,8 +1,18 @@
 // Build the Operit tool package: operit/src/main.js -> operit/dist/main.js
-// (commonjs, es2020 — Operit's toolchain target — with every node:* import
-// aliased to the portable shims, exactly like cli/cli-build.sh).
-import { build } from "/home/ubuntu/Dsh_workspace/spike-tools/node_modules/esbuild/lib/main.js";
+// (commonjs, es2016 — the ALS prelude requires async lowering — with every
+// node:* import aliased to the portable shims, exactly like cli/cli-build.sh).
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
+
+async function loadEsbuild() {
+	try {
+		return await import("esbuild");
+	} catch {
+		const local = process.env.ESBUILD_MODULE ?? "/home/ubuntu/Dsh_workspace/spike-tools/node_modules/esbuild/lib/main.js";
+		return await import(pathToFileURL(local).href);
+	}
+}
+const { build } = await loadEsbuild();
 
 const root = new URL(".", import.meta.url).pathname; // spike/operit/
 const shimsDir = root + "../shims/"; // spike/shims/

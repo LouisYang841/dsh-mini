@@ -40,9 +40,13 @@ the agent to write its own scripts. Docs for agents beat tools for agents.
   artifact note.
 - **Engine quirks live in `shims/` or `polyfills.js`**, never in vendored
   upstream code. Each shim documents the engine difference it normalizes.
-- **Credentials via env only** (`GEMINI_API_KEY`); `.env` is gitignored,
-  `.env.example` is the template. Nothing secret goes into source, commits,
-  or release notes.
+- **Credentials stay out of source** (`DEEPSEEK_API_KEY`, `GEMINI_API_KEY`,
+  `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENROUTER_API_KEY` for the
+  CLI; the Operit toolpkg receives its key from the host's credential
+  settings). Persisted key files (`~/.dsh-mini/env`, `./.env`) are optional
+  convenience and must be created with owner-only permissions; `.env` is
+  gitignored, `.env.example` is the template. Nothing secret goes into
+  source, commits, or release notes.
 - **License hygiene**: every NEW bundled dependency must be added to
   `THIRD_PARTY_LICENSES.md` (component + license + copyright line) in the
   same commit; releases attach that file next to the artifact.
@@ -84,7 +88,7 @@ only for final smoke; AI Studio free quota is per model, switch models.
 2. `./build.sh && cli/cli-build.sh`; copy `cli/cli.mjs` → `dist/dsh-mini.mjs`,
    `bundle.mjs` → `dist/dsh-engine.mjs`.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z && gh release create vX.Y.Z
-   dist/dsh-mini.mjs dist/dsh-engine.mjs`.
+   dist/dsh-mini.mjs dist/dsh-engine.mjs THIRD_PARTY_LICENSES.md`.
 4. `scripts/install.sh` downloads `releases/<tag>/download/dsh-mini.mjs` —
    keep the artifact name stable across releases.
 5. Attach `THIRD_PARTY_LICENSES.md` to the release (license notices travel

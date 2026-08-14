@@ -121,14 +121,14 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 	// Collect complete lines that fit
 	const outputLinesArr: string[] = [];
 	let outputBytesCount = 0;
-	let truncatedBy: "lines" | "bytes" = "lines";
+	let hitByteLimit = false;
 
 	for (let i = 0; i < lines.length && i < maxLines; i++) {
 		const line = lines[i];
 		const lineBytes = Buffer.byteLength(line, "utf-8") + (i > 0 ? 1 : 0); // +1 for newline
 
 		if (outputBytesCount + lineBytes > maxBytes) {
-			truncatedBy = "bytes";
+			hitByteLimit = true;
 			break;
 		}
 
@@ -136,10 +136,9 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 		outputBytesCount += lineBytes;
 	}
 
-	// If we exited due to line limit
-	if (outputLinesArr.length >= maxLines && outputBytesCount <= maxBytes) {
-		truncatedBy = "lines";
-	}
+	// Lines were dropped only when the line limit cut the loop short.
+	const truncatedBy: "lines" | "bytes" =
+		!hitByteLimit && outputLinesArr.length < totalLines ? "lines" : "bytes";
 
 	const outputContent = outputLinesArr.join("\n");
 	const finalOutputBytes = Buffer.byteLength(outputContent, "utf-8");

@@ -30,11 +30,11 @@
 
 ## 为什么对 Termux 友好
 
-- **唯一运行时要求：Node ≥ 22.15**——zstd 内置于 `node:zlib`，无原生模块、无编译
+- **推荐 Node ≥ 22.15**——zstd 内置于 `node:zlib`，无原生模块、无编译；更旧 Node 可运行但 session 会退化为未压缩 JSONL
 - **一条命令安装**：`curl | sh`，下载单个 7.7MB 自包含文件 + 26 行 launcher，npm 都不需要
 - **bash 工具直接打手机真实文件系统**（OnePlus 15 / Termux 实测：ls、建文件、跑脚本）
 - **为 Android 修过的真坑**（skill 里有记录）：SELinux 禁硬链接 → 持久化降级为 rename 原子发布；`exit` 与 200ms 写批的时序 → 退出前强制 flush
-- **数据和密钥都在手机本地**：会话 JSONL 在 `~/.dsh-mini/sessions`，密钥可从本机 pi 配置导入、不出设备
+- **数据和密钥都在手机本地**：会话 JSONL 在 `~/.dsh-mini/sessions`；密钥只从环境变量读取（可选持久化到 0600 权限的 `~/.dsh-mini/env` 或 `./.env`），不出设备
 - 三套界面按环境自适应：默认全屏 TUI / `DSH_TUI=basic` 简易壳 / `DSH_PLAIN=1` 纯文本（管道与脚本友好）
 
 ## pi 和 DSH 是怎么低耦合焊在一起的
@@ -136,8 +136,8 @@ node cli/cli.mjs [model]
   Gemini-3 `thoughtSignature` echo quirk (signatures are part-level siblings
   of `functionCall` in both directions).
 - Tools: the REAL `dsh-tool-fs` tools (read/write/edit/list) + `dsh-tool-todo`,
-  backed by a minimal node:fs implementation of the dsh `fs` service
-  (`cli/node-fs.js`).
+  backed by the official `dsh-fs-local` service (`cli/node-fs.js` remains the
+  non-Node contract reference).
 - Persistence: the REAL DSH JSONL backend (`dsh-session-persistence-jsonl`,
   zstd, per-cwd layout); sessions survive restarts, `--resume <id>` resumes,
   `--sessions` lists. Verified cross-process memory (secret-code test).
@@ -185,7 +185,8 @@ curl -fsSL https://github.com/LouisYang841/dsh-mini/raw/main/scripts/install.sh 
 ```
 
 Installs `dsh-mini` as a command (bundle to `~/.dsh-mini/`, launcher on
-PATH). Requires Node >= 22.15. On Termux: `pkg install nodejs` first.
+PATH). Requires Node >= 22.15 for zstd sessions; older Node works with
+uncompressed JSONL. On Termux: `pkg install nodejs` first.
 
 ## Termux (Android)
 
@@ -201,7 +202,7 @@ gets plain line mode for scripts/CI.
 ```sh
 pkg install nodejs            # Node >= 22.15 (zstd is bundled in node:zlib)
 curl -LO https://github.com/LouisYang841/dsh-mini/releases/latest/download/dsh-mini.mjs
-export GEMINI_API_KEY=<your AI Studio key>
+export GEMINI_API_KEY="<your AI Studio key>"
 node dsh-mini.mjs             # pi-tui shell; the bash tool hits Termux's real bash
 ```
 

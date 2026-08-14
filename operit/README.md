@@ -30,7 +30,8 @@ read_file_full/file_exists）把会话事件追加写入
    ```
 2. **在手机上用 Operit 的包安装工具**装这个 zip（PackageToolExecutor；
    market origin 路径），然后在 AI provider 设置里选 "DSH mini (DeepSeek)"，
-   填 API Key / endpoint / modelName。
+   在 Operit 的 credential 设置里填 API Key（宿主配置，不写入任何源文件），
+   再填 endpoint / modelName。
 
 若包安装路径不可用（版本差异），fallback：把 `dist/main.js` + `manifest.json`
 放进 `app/src/main/assets/` 对应的工具包目录重编 APK（重活用 AWS credit 开

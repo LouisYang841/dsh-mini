@@ -30,6 +30,9 @@ export const createWriteStream = unavailable;
 export const watch = unavailable;
 export const realpath = unavailable;
 export const realpathSync = unavailable;
+export function existsSync() {
+	unavailable();
+}
 export const promises = {
 	readFile: unavailable,
 	writeFile: unavailable,
@@ -43,4 +46,32 @@ export const promises = {
 	rename: unavailable,
 	realpath: unavailable,
 };
-export default { promises, readFileSync, writeFileSync, mkdirSync, existsSync: () => false };
+export default {
+	promises,
+	readFile,
+	readFileSync,
+	writeFile,
+	writeFileSync,
+	appendFile,
+	appendFileSync,
+	mkdir,
+	mkdirSync,
+	readdir,
+	readdirSync,
+	stat,
+	statSync,
+	lstat,
+	lstatSync,
+	access,
+	accessSync,
+	rm,
+	rmSync,
+	rename,
+	renameSync,
+	createReadStream,
+	createWriteStream,
+	watch,
+	realpath,
+	realpathSync,
+	existsSync,
+};

@@ -48,6 +48,11 @@ are required.
 }
 ```
 
+Toolpackages inherit a sanitized environment: variables whose names look
+like secrets (`API_KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`) are
+stripped unless the manifest explicitly allowlists them. For example a
+DeepSeek-backed search tool declares `"allowEnv": ["DEEPSEEK_API_KEY"]`.
+
 | Field | Meaning |
 |---|---|
 | `name` | Unique tool name. Must not collide with another toolpackage or a built-in tool. |
@@ -56,6 +61,7 @@ are required.
 | `output` | DSH JSON schema for the tool result. Defaults to `{ "type": "string" }`. Object schemas must set `additionalProperties` explicitly. |
 | `command` | Non-empty argv array. The first entry is the executable; the rest are argv. Relative paths resolve against the manifest's directory. |
 | `timeoutMs` | Optional positive integer, default `30000`. The child is killed on timeout. |
+| `allowEnv` | Optional array of environment variable names to pass through in addition to the safe allowlist (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `LC_*`, `TERM`, temp dirs). Required for tools that need an API key. |
 
 DSH tool schemas use the subset accepted by `@deepseek-ai/dsh-tools`: scalar
 `type`, object `properties`/`required`/`additionalProperties`, array `items`,
@@ -157,7 +163,8 @@ Anthropic-compatible Messages endpoint and the native `web_search` server tool:
     "additionalProperties": true
   },
   "command": ["node", "./web-search.mjs"],
-  "timeoutMs": 60000
+  "timeoutMs": 60000,
+  "allowEnv": ["DEEPSEEK_API_KEY"]
 }
 ```
 

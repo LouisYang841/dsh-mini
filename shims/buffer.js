@@ -83,8 +83,12 @@ export class Buffer extends Uint8Array {
 		}
 		return s;
 	}
-	subarray(start, end) {
-		return new Buffer(Uint8Array.prototype.subarray.call(this, start, end));
+	subarray(start = 0, end = this.length) {
+		const begin = start < 0 ? Math.max(this.length + start, 0) : Math.min(start, this.length);
+		const finish = end < 0 ? Math.max(this.length + end, 0) : Math.min(end, this.length);
+		// Construct directly over the parent ArrayBuffer so writes through the
+		// view are visible to the original buffer, matching node:buffer.
+		return new Buffer(this.buffer, this.byteOffset + begin, Math.max(0, finish - begin));
 	}
 	slice(start, end) {
 		return this.subarray(start, end);

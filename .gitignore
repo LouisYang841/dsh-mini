@@ -1,5 +1,6 @@
 # build artifacts
 bundle.mjs
+build.log
 cli/cli.mjs
 trace.*.json
 *.err

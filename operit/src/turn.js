@@ -81,8 +81,8 @@ export async function driveTurn(engine, userText) {
 		} else if (chunk?.type === "usage") {
 			const u = chunk.usage ?? {};
 			usage = {
-				input: Number(u.inputTokens ?? u.input ?? 0),
-				output: Number(u.outputTokens ?? u.output ?? 0),
+				input: usage.input + (Number(u.inputTokens ?? u.input ?? 0) || 0),
+				output: usage.output + (Number(u.outputTokens ?? u.output ?? 0) || 0),
 			};
 		}
 	}

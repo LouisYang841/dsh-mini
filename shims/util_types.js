@@ -4,7 +4,7 @@ export function isPromise(value) {
 }
 
 export function isAnyArrayBuffer(value) {
-	return value instanceof ArrayBuffer || value instanceof SharedArrayBuffer;
+	return value instanceof ArrayBuffer || (typeof SharedArrayBuffer !== "undefined" && value instanceof SharedArrayBuffer);
 }
 
 export function isArrayBuffer(value) {

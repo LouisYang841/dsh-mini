@@ -47,14 +47,28 @@ import { appendMode, apply as applyModeBootstrap, foldMode, isValidMode, LEGACY_
 import { registerToolpackages, scanToolpackages } from "./tool-scanner.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { zstdCompress } from "node:zlib";
 import { homedir } from "node:os";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const CWD = process.cwd();
+// Minimal env loader: ~/.dsh-mini/env then ./.env (gitignored), KEY=VALUE
+// lines, never overriding the real environment. It runs before any constant
+// below reads process.env, so persisted provider keys are visible on startup.
+for (const envFile of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
+	try {
+		if (!existsSync(envFile)) continue;
+		for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
+			const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+			if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].trim();
+		}
+	} catch {
+		// unreadable env file is not fatal
+	}
+}
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
 const TOOL_ROOTS = [...new Set([join(CWD, "tools"), join(homedir(), ".dsh-mini", "tools")])];
 // node:zlib zstd is built into Node >= 22.15 (no system lib); degrade to
@@ -86,7 +100,9 @@ const flagValue = (name) => {
 	const index = process.argv.findIndex((arg) => arg === name || arg.startsWith(`${name}=`));
 	if (index < 0) return undefined;
 	const arg = process.argv[index];
-	return arg === name ? process.argv[index + 1] : arg.slice(name.length + 1);
+	if (arg !== name) return arg.slice(name.length + 1);
+	const next = process.argv[index + 1];
+	return next !== undefined && !next.startsWith("--") ? next : undefined;
 };
 const RESUME_ID = flagValue("--resume");
 const PROVIDER_OVERRIDE = flagValue("--provider");
@@ -134,29 +150,21 @@ const PLAN_MODE_SECTION = [
 
 process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection:", r?.stack ?? String(r)));
 
-// Minimal env loader: ~/.dsh-mini/env then ./.env (gitignored), KEY=VALUE
-// lines, never overriding the real environment.
-for (const envFile of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
-	try {
-		if (!existsSync(envFile)) continue;
-		for (const line of readFileSync(envFile, "utf8").split(/\r?\n/)) {
-			const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-			if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].trim();
-		}
-	} catch {
-		// unreadable env file is not fatal
-	}
-}
-
 // Persist an interactively entered key: user config dir first, cwd .env
 // fallback (both gitignored; never touch the repo's tracked files).
 function persistCredential(provider, key) {
 	const env = PROVIDER_DEFAULTS[provider].keyEnv;
 	for (const target of [join(homedir(), ".dsh-mini", "env"), join(CWD, ".env")]) {
 		try {
-			mkdirSync(dirname(target), { recursive: true });
+			// Credential files must never be world-readable. The mode only
+			// applies to newly-created directories/files, so chmod the file
+			// explicitly after writing; the user home config dir is also
+			// tightened when it already exists.
+			mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+			if (target === join(homedir(), ".dsh-mini", "env")) chmodSync(dirname(target), 0o700);
 			const previous = existsSync(target) ? readFileSync(target, "utf8").replace(new RegExp(`^${env}=.*$`, "m"), "").trimEnd() : "";
-			writeFileSync(target, `${previous}${previous ? "\n" : ""}${env}=${key}\n`);
+			writeFileSync(target, `${previous}${previous ? "\n" : ""}${env}=${key}\n`, { mode: 0o600 });
+			chmodSync(target, 0o600);
 			console.log(`(saved ${env} to ${target})`);
 			return;
 		} catch {
@@ -518,17 +526,8 @@ const boot = async (ctx) => {
 		await flushSession(agent.session);
 	};
 
-	// ---- renderer first: interactive setup needs it before the agent exists ----
-	const ui = TTY && !USE_CC_TUI
-		? createTuiHost({
-				onLine: (line) => void handleLine(line),
-				onInterrupt: () => {
-					if (busy && agent) agent.cancel({ kind: "user-interrupt" });
-				},
-			})
-		: null;
-
 	let plainRl = null;
+	let setupRl = null;
 	let stdinClosed = false;
 	let plainInputActive = false;
 	// Piped stdin delivers whole chunks at once, so rl.question misses lines
@@ -536,17 +535,18 @@ const boot = async (ctx) => {
 	// listener + queue fixes it: early lines queue, askUser drains the queue.
 	let lineQueue = [];
 	let lineResolver = null;
+	const queueLine = (line) => {
+		if (lineResolver) {
+			const resolve = lineResolver;
+			lineResolver = null;
+			resolve(line);
+		} else {
+			lineQueue.push(line);
+		}
+	};
 	if (!TTY) {
 		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-		plainRl.on("line", (line) => {
-			if (lineResolver) {
-				const resolve = lineResolver;
-				lineResolver = null;
-				resolve(line);
-			} else {
-				lineQueue.push(line);
-			}
-		});
+		plainRl.on("line", queueLine);
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
 		// turn that is still streaming.
 		plainRl.on("close", () => {
@@ -554,6 +554,11 @@ const boot = async (ctx) => {
 			stdinClosed = true;
 			if (!busy) void gracefulExit();
 		});
+	} else {
+		// First-run provider/key setup needs a reader even on a real terminal,
+		// before the basic or community TUI takes raw-mode ownership of stdin.
+		setupRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+		setupRl.on("line", queueLine);
 	}
 	const askUser = (question) => {
 		process.stdout.write(question);
@@ -588,6 +593,21 @@ const boot = async (ctx) => {
 			persistCredential(answer, key);
 		}
 	}
+	if (setupRl) {
+		setupRl.close();
+		setupRl = null;
+	}
+
+	// ---- renderer: interactive setup is complete, so either TUI can now own stdin ----
+	const ui = TTY && !USE_CC_TUI
+		? createTuiHost({
+				onLine: (line) => void handleLine(line),
+				onInterrupt: () => {
+					if (busy && agent) agent.cancel({ kind: "user-interrupt" });
+				},
+				onExit: () => (agent ? flushSession(agent.session) : undefined),
+			})
+		: null;
 
 	let usage = undefined;
 

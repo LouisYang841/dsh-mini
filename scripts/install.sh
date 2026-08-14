@@ -7,11 +7,17 @@ set -e
 BASE="${DSH_HOME:-$HOME/.dsh-mini}"
 VERSION="${DSH_VERSION:-latest}"
 BUNDLE="$BASE/dsh-mini.mjs"
+REPO="https://github.com/LouisYang841/dsh-mini"
+if [ "$VERSION" = "latest" ]; then
+	URL="$REPO/releases/latest/download/dsh-mini.mjs"
+else
+	URL="$REPO/releases/download/$VERSION/dsh-mini.mjs"
+fi
 
 mkdir -p "$BASE" "$BASE/bin"
 
 echo "dsh-mini: downloading $VERSION artifact..."
-curl -fL "https://github.com/LouisYang841/dsh-mini/releases/${VERSION}/download/dsh-mini.mjs" -o "$BUNDLE"
+curl -fL "$URL" -o "$BUNDLE"
 chmod 644 "$BUNDLE"
 
 cat > "$BASE/bin/dsh-mini" <<'EOF'
@@ -30,7 +36,7 @@ case ":$PATH:" in
 	*":$BASE/bin:"*) ;;
 	*)
 		for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-			if [ -f "$rc" ] && ! grep -q "$BASE/bin" "$rc" 2>/dev/null; then
+			if [ -f "$rc" ] && ! grep -qF "$BASE/bin" "$rc" 2>/dev/null; then
 				echo "export PATH=\"$BASE/bin:\$PATH\"" >> "$rc"
 				echo "dsh-mini: added $BASE/bin to $rc"
 			fi

@@ -15,6 +15,7 @@
  */
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { StringDecoder } from 'node:string_decoder'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -42,6 +43,9 @@ function validateManifest(raw, file) {
   }
   if (raw.output !== undefined && (typeof raw.output !== 'object' || raw.output === null || Array.isArray(raw.output))) {
     throw new Error('output must be a JSON Schema object when supplied')
+  }
+  if (raw.allowEnv !== undefined && (!Array.isArray(raw.allowEnv) || raw.allowEnv.some((item) => typeof item !== 'string' || item.length === 0))) {
+    throw new Error('allowEnv must be an array of environment variable names when supplied')
   }
   const timeoutMs = raw.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : raw.timeoutMs
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error('timeoutMs must be a positive safe integer')
@@ -80,6 +84,7 @@ export function scanToolpackages(roots) {
           output,
           command: raw.command,
           timeoutMs: raw.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          allowEnv: raw.allowEnv ?? [],
           manifestDir: dirname(file),
           manifestPath: file,
         })
@@ -99,6 +104,19 @@ function renderToolResult(value) {
   } catch {
     return String(value)
   }
+}
+
+/** Environment for a toolpackage child. Secret-looking variables are stripped
+ * by default; manifests may explicitly allowlist required credentials such as
+ * DEEPSEEK_API_KEY with `allowEnv`. */
+function toolEnv(allowEnv) {
+	const allowed = new Set(allowEnv)
+	const safe = (name) => /^(PATH|HOME|USER|SHELL|LANG|LC_[A-Z_]+|TERM|TMPDIR|TMP|TEMP)$/.test(name)
+	return Object.fromEntries(Object.entries(process.env).filter(([name]) => {
+		if (allowed.has(name)) return true
+		if (safe(name)) return true
+		return !/(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name)
+	}))
 }
 
 function killProcessTree(child) {
@@ -125,7 +143,7 @@ function killProcessTree(child) {
 export async function runToolpackage(definition, args, signal) {
   const child = spawn(definition.command[0], definition.command.slice(1), {
     cwd: definition.manifestDir,
-    env: process.env,
+    env: toolEnv(definition.allowEnv ?? []),
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
     windowsHide: true,
@@ -133,6 +151,8 @@ export async function runToolpackage(definition, args, signal) {
   let stdout = ''
   let stderr = ''
   let outputBytes = 0
+  const stdoutDecoder = new StringDecoder('utf8')
+  const stderrDecoder = new StringDecoder('utf8')
   let timedOut = false
   let timeoutHandle
 
@@ -148,12 +168,16 @@ export async function runToolpackage(definition, args, signal) {
 
     child.stdout.on('data', (chunk) => {
       outputBytes += chunk.length
-      if (outputBytes <= MAX_OUTPUT_BYTES) stdout += chunk
+      if (outputBytes <= MAX_OUTPUT_BYTES) stdout += stdoutDecoder.write(chunk)
       else killProcessTree(child)
     })
     child.stderr.on('data', (chunk) => {
-      if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk
+      if (stderr.length < MAX_OUTPUT_BYTES) stderr += stderrDecoder.write(chunk)
     })
+    // The tool may exit before its stdin is consumed; the close handler below
+    // reports that outcome, so treat the resulting EPIPE as a normal channel
+    // closure instead of an unhandled stream error.
+    child.stdin.on('error', () => {})
     child.stdin.end(JSON.stringify(args ?? {}))
 
     const exitCode = await new Promise((resolve, reject) => {
@@ -174,6 +198,8 @@ export async function runToolpackage(definition, args, signal) {
       throw new Error(`tool "${definition.name}" did not return valid JSON from stdout${stderr.trim() ? `: ${stderr.trim()}` : ''}`)
     }
   } finally {
+    stdout += stdoutDecoder.end()
+    stderr += stderrDecoder.end()
     if (timeoutHandle) clearTimeout(timeoutHandle)
     signal?.removeEventListener('abort', onAbort)
   }

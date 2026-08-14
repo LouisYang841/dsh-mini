@@ -158,42 +158,52 @@ async function okHttpStream(url, headers, bodyJson, onChunk) {
 }
 
 /** Hand-rolled SSE framing over raw chunks. */
-async function* parseSseFromChunks(url, headers, body) {
+async function* parseSseFromChunks(url, headers, body, signal) {
 	const queue = createAsyncQueue();
-	// The generator body runs on first next(): fire the transport now.
-	okHttpStream(url, headers, body, (chunk) => queue.push(chunk)).then(
-		() => queue.close(),
-		(err) => {
-			queue.push({ __error: err });
-			queue.close();
-		},
-	);
-	let buffer = "";
-	let done = false;
-	while (true) {
-		const item = await queue.next();
-		if (item === null) break;
-		if (item && item.__error) throw item.__error;
-		buffer += item;
-		let sep = buffer.indexOf("\n\n");
-		while (sep >= 0) {
-			const block = buffer.slice(0, sep);
-			buffer = buffer.slice(sep + 2);
-			const dataLines = block
-				.split(/\r?\n/)
-				.filter((line) => line.startsWith("data:"))
-				.map((line) => line.slice(5).trim())
-				.filter(Boolean);
-			if (dataLines.length > 0) {
-				for (const payload of dataLines) {
-					yield payload;
-					if (payload === "[DONE]") done = true;
+	if (signal?.aborted) throw new LlmError("request aborted", "ABORTED");
+	const onAbort = () => {
+		queue.push({ __error: new LlmError("request aborted", "ABORTED") });
+		queue.close();
+	};
+	signal?.addEventListener("abort", onAbort, { once: true });
+	try {
+		// The generator body runs on first next(): fire the transport now.
+		okHttpStream(url, headers, body, (chunk) => queue.push(chunk)).then(
+			() => queue.close(),
+			(err) => {
+				queue.push({ __error: err });
+				queue.close();
+			},
+		);
+		let buffer = "";
+		let done = false;
+		while (true) {
+			const item = await queue.next();
+			if (item === null) break;
+			if (item && item.__error) throw item.__error;
+			buffer += item;
+			let sep = buffer.indexOf("\n\n");
+			while (sep >= 0) {
+				const block = buffer.slice(0, sep);
+				buffer = buffer.slice(sep + 2);
+				const dataLines = block
+					.split(/\r?\n/)
+					.filter((line) => line.startsWith("data:"))
+					.map((line) => line.slice(5).trim())
+					.filter(Boolean);
+				if (dataLines.length > 0) {
+					for (const payload of dataLines) {
+						yield payload;
+						if (payload === "[DONE]") done = true;
+					}
 				}
+				sep = buffer.indexOf("\n\n");
 			}
-			sep = buffer.indexOf("\n\n");
 		}
+		if (!done) throw new LlmError("SSE stream ended without [DONE]", "STREAM_CLOSED");
+	} finally {
+		signal?.removeEventListener("abort", onAbort);
 	}
-	if (!done) throw new LlmError("SSE stream ended without [DONE]", "STREAM_CLOSED");
 }
 
 async function* translate(payloads) {
@@ -308,7 +318,7 @@ export class DeepSeekAdapter extends LlmAdapter {
 			parseSseFromChunks(endpoint, {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${this.config.apiKey}`,
-			}, body),
+			}, body, options.signal),
 		);
 	}
 }

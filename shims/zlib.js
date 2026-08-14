@@ -12,4 +12,4 @@ export const deflate = unavailable;
 export const deflateSync = unavailable;
 export const inflate = unavailable;
 export const inflateSync = unavailable;
-export default { gzip, gunzip, deflate, inflate };
+export default { gzip, gzipSync, gunzip, gunzipSync, deflate, deflateSync, inflate, inflateSync };

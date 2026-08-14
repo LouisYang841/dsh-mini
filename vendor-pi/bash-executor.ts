@@ -92,12 +92,7 @@ export async function executeBashWithOperations(
 
 	const decoder = new TextDecoder();
 
-	const onData = (data: Buffer) => {
-		totalBytes += data.length;
-
-		// Sanitize: strip ANSI, replace binary garbage, normalize newlines
-		const text = sanitizeBinaryOutput(stripAnsi(decoder.decode(data, { stream: true }))).replace(/\r/g, "");
-
+	const appendText = (text: string) => {
 		// Start writing to temp file if exceeds threshold
 		if (totalBytes > DEFAULT_MAX_BYTES) {
 			ensureTempFile();
@@ -121,53 +116,60 @@ export async function executeBashWithOperations(
 		}
 	};
 
+	const onData = (data: Buffer) => {
+		totalBytes += data.length;
+
+		// Sanitize: strip ANSI, replace binary garbage, normalize newlines
+		const text = sanitizeBinaryOutput(stripAnsi(decoder.decode(data, { stream: true }))).replace(/\r/g, "");
+		appendText(text);
+	};
+
+	// WriteStream.end() only STARTS finalization. Await finish/close before
+	// returning a spill path so the caller never sees a missing/partial file.
+	const finishTempFile = () => {
+		if (!tempFileStream) return Promise.resolve();
+		const stream = tempFileStream;
+		tempFileStream = undefined;
+		return new Promise<void>((resolve) => {
+			stream.once("finish", () => resolve());
+			stream.once("close", () => resolve());
+			stream.once("error", () => resolve());
+			stream.end();
+		});
+	};
+
+	const buildResult = async (exitCode: number | null | undefined, cancelled: boolean) => {
+		const tail = decoder.decode();
+		if (tail.length > 0) appendText(sanitizeBinaryOutput(stripAnsi(tail)).replace(/\r/g, ""));
+		const fullOutput = outputChunks.join("");
+		const truncationResult = truncateTail(fullOutput);
+		if (truncationResult.truncated) {
+			ensureTempFile();
+		}
+		await finishTempFile();
+		return {
+			output: truncationResult.truncated ? truncationResult.content : fullOutput,
+			exitCode: cancelled ? undefined : (exitCode ?? undefined),
+			cancelled,
+			truncated: truncationResult.truncated,
+			fullOutputPath: tempFilePath,
+		};
+	};
+
 	try {
 		const result = await operations.exec(command, cwd, {
 			onData,
 			signal: options?.signal,
 		});
 
-		const fullOutput = outputChunks.join("");
-		const truncationResult = truncateTail(fullOutput);
-		if (truncationResult.truncated) {
-			ensureTempFile();
-		}
-		if (tempFileStream) {
-			tempFileStream.end();
-		}
-		const cancelled = options?.signal?.aborted ?? false;
-
-		return {
-			output: truncationResult.truncated ? truncationResult.content : fullOutput,
-			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
-			cancelled,
-			truncated: truncationResult.truncated,
-			fullOutputPath: tempFilePath,
-		};
+		return await buildResult(result.exitCode, options?.signal?.aborted ?? false);
 	} catch (err) {
 		// Check if it was an abort
 		if (options?.signal?.aborted) {
-			const fullOutput = outputChunks.join("");
-			const truncationResult = truncateTail(fullOutput);
-			if (truncationResult.truncated) {
-				ensureTempFile();
-			}
-			if (tempFileStream) {
-				tempFileStream.end();
-			}
-			return {
-				output: truncationResult.truncated ? truncationResult.content : fullOutput,
-				exitCode: undefined,
-				cancelled: true,
-				truncated: truncationResult.truncated,
-				fullOutputPath: tempFilePath,
-			};
+			return await buildResult(undefined, true);
 		}
 
-		if (tempFileStream) {
-			tempFileStream.end();
-		}
-
+		await finishTempFile();
 		throw err;
 	}
 }

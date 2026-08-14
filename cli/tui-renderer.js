@@ -15,8 +15,9 @@ import {
 /**
  * @param hooks.onLine - user-submitted input line (commands or prompts)
  * @param hooks.onInterrupt - Ctrl+C while a turn is running
+ * @param hooks.onExit - optional async durability flush before exit
  */
-export function createTuiHost({ onLine, onInterrupt }) {
+export function createTuiHost({ onLine, onInterrupt, onExit }) {
 	const terminal = new ProcessTerminal();
 	const tui = new TuiMainScreen(terminal);
 	const status = new TruncatedText("dsh-mini", 0, 0);
@@ -47,6 +48,7 @@ export function createTuiHost({ onLine, onInterrupt }) {
 		}
 		if (busy || !value.trim()) return;
 		addLine("you> " + value);
+		input.setValue("");
 		onLine(value.trim());
 	};
 
@@ -60,8 +62,8 @@ export function createTuiHost({ onLine, onInterrupt }) {
 				onInterrupt();
 			} else {
 				tui.stop();
-				// persistence flush grace (the backend batches writes)
-				setTimeout(() => process.exit(0), 500);
+				const finish = onExit ? onExit() : Promise.resolve();
+				Promise.resolve(finish).finally(() => process.exit(0));
 			}
 		}
 	});

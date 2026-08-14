@@ -125,10 +125,15 @@ export class NodeFs extends FileSystem {
 			edited = original.split(edit.oldString).join(edit.newString);
 			count = original.split(edit.oldString).length - 1;
 		} else {
-			if (original.includes(edit.oldString)) {
-				edited = original.replace(edit.oldString, edit.newString);
-				count = 1;
+			let offset = 0;
+			while ((offset = original.indexOf(edit.oldString, offset)) !== -1) {
+				count += 1;
+				offset += edit.oldString.length;
 			}
+			if (count > 1) {
+				throw new FsError(`cannot edit "${target.displayPath}": old string appears ${count} times; provide a larger string with more surrounding context`, "FS_AMBIGUOUS_EDIT");
+			}
+			if (count === 1) edited = original.replace(edit.oldString, edit.newString);
 		}
 		if (count === 0) {
 			throw new FsError(`cannot edit "${target.displayPath}": old string not found`, "FS_EDIT_TARGET_NOT_FOUND");

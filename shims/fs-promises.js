@@ -12,15 +12,28 @@
 // Every other export passes through untouched.
 const native = process.getBuiltinModule("node:fs/promises");
 
-export async function link(existing, next) {
+// Serialize link publication. On Android, link() is denied and a naive
+// rename fallback can overwrite a destination published by a concurrent
+// writer. copyFile with COPYFILE_EXCL preserves no-clobber semantics.
+let publishQueue = Promise.resolve();
+
+async function publishLink(existing, next) {
 	try {
 		return await native.link(existing, next);
 	} catch (error) {
 		if (error?.code === "EACCES" || error?.code === "EPERM" || error?.code === "EXDEV" || error?.code === "EOPNOTSUPP" || error?.code === "ENOTSUP") {
-			return await native.rename(existing, next);
+			await native.copyFile(existing, next, native.constants.COPYFILE_EXCL);
+			await native.unlink(existing);
+			return;
 		}
 		throw error;
 	}
+}
+
+export function link(existing, next) {
+	const operation = publishQueue.then(() => publishLink(existing, next));
+	publishQueue = operation.catch(() => {});
+	return operation;
 }
 
 export const access = native.access;

@@ -78,35 +78,46 @@ def apply(path):
 	with open(path, encoding="utf-8") as f:
 		src = f.read()
 	changed = []
+	missing = []
 	if "dsh-mini patch: bright magenta" not in src:
 		if ACCENT_OLD in src:
-			src = src.replace(ACCENT_OLD, ACCENT_NEW)
+			src = src.replace(ACCENT_OLD, ACCENT_NEW, 1)
 			changed.append("accent-blue")
+		else:
+			missing.append("accent-blue")
 	else:
 		changed.append("accent-blue (already)")
 	if "dsh-mini patch: cap the standing panel" not in src:
 		if TODO_OLD in src:
-			src = src.replace(TODO_OLD, TODO_NEW)
-			src = src.replace(TODO_TAIL_OLD, TODO_TAIL_NEW)
+			if TODO_TAIL_OLD not in src:
+				missing.append("todo-cap-3 (tail anchor)")
+			src = src.replace(TODO_OLD, TODO_NEW, 1)
+			src = src.replace(TODO_TAIL_OLD, TODO_TAIL_NEW, 1)
 			changed.append("todo-cap-3")
+		else:
+			missing.append("todo-cap-3")
 	else:
 		changed.append("todo-cap-3 (already)")
 	if "dsh-mini patch: typing any printable character" not in src:
 		if CLARIFY_OLD in src:
-			src = src.replace(CLARIFY_OLD, CLARIFY_NEW)
-			src = src.replace(CLARIFY_HINT_OLD, CLARIFY_HINT_NEW)
-			src = src.replace(CLARIFY_ERROR_OLD, CLARIFY_ERROR_NEW)
+			src = src.replace(CLARIFY_OLD, CLARIFY_NEW, 1)
+			src = src.replace(CLARIFY_HINT_OLD, CLARIFY_HINT_NEW, 1)
+			src = src.replace(CLARIFY_ERROR_OLD, CLARIFY_ERROR_NEW, 1)
 			changed.append("clarify-type-custom")
 		else:
-			changed.append("clarify-type-custom (anchor missing)")
+			missing.append("clarify-type-custom")
 	else:
 		changed.append("clarify-type-custom (already)")
 	if changed:
 		with open(path, "w", encoding="utf-8") as f:
 			f.write(src)
 	print(f"patched {path}: {', '.join(changed)}")
+	if missing:
+		print(f"ERROR anchors missing in {path}: {', '.join(missing)}", file=sys.stderr)
+		return False
+	return True
 
 
 if __name__ == "__main__":
-	for p in sys.argv[1:]:
-		apply(p)
+	ok = all(apply(p) for p in sys.argv[1:])
+	sys.exit(0 if ok else 1)

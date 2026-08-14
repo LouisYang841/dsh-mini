@@ -5,7 +5,7 @@
 > 假 provider 回放（todo 工具调度）+ 真 API 冒烟双过。产物
 > `dshmini.toolpkg.zip`（~200KB）挂在 release 上，手机上用 Operit 包安装
 > 即可，无需重编 APK。剩：设备侧安装联调 + 工具名核对。
-
+>
 > 目标：把 dsh-mini 的便携引擎塞进 Operit，让 DSH agent 直接使用 Operit
 > 已有的能力（终端、UI 树、Android 工具、网络、本地模型）作为"手"，
 > 我们**不重写任何操作手机的工具**。引擎一行不改，只写宿主胶水。
@@ -28,7 +28,7 @@
 
 ## 触手模型（五条缝在 Operit 里的落点）
 
-```
+```text
 DSH 引擎（bundle.mjs，QuickJS，不动）
  ├─ ① llm adapter   → 云：OkHttp3.js 上的 SSE 适配器（参考我们的 DeepSeek 适配器）
  │                    本地：Operit llama/mnn provider

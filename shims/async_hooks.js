@@ -57,14 +57,12 @@ export class AsyncLocalStorage {
 		}
 	}
 	enterWith(store) {
-		const prev = currentStore;
+		// Node semantics: the store stays active until disable() or run()
+		// restores a different value; enterWith returns undefined.
 		currentStore = store;
-		return () => {
-			currentStore = prev;
-		};
 	}
 	disable() {
-		return this.enterWith(undefined);
+		currentStore = undefined;
 	}
 }
 

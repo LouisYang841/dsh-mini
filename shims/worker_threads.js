@@ -9,4 +9,4 @@ export const isMainThread = true;
 export const parentPort = null;
 export const workerData = undefined;
 export const MessageChannel = unavailable;
-export default { Worker, isMainThread, parentPort, workerData };
+export default { Worker, isMainThread, parentPort, workerData, MessageChannel };

@@ -114,7 +114,7 @@ export class GeminiAdapter extends LlmAdapter {
 	}
 
 	async *generateStream(options) {
-		const url = `${this.baseUrl}/models/${encodeURIComponent(options.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.apiKey)}`;
+		const url = `${this.baseUrl}/models/${encodeURIComponent(options.model)}:streamGenerateContent?alt=sse`;
 		const controller = new AbortController();
 		const onAbort = () => controller.abort();
 		options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -127,6 +127,7 @@ export class GeminiAdapter extends LlmAdapter {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"x-goog-api-key": this.apiKey,
 					...attributionHeaders(),
 				},
 				body,

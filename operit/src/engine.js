@@ -68,7 +68,7 @@ class SelfTestAdapter extends LlmAdapter {
  * exercises the exact same mount list as production.
  */
 async function createEngine(config, adapterFactory, agentId) {
-	const engine = { ctx: new Context(), agent: null, config, configKey: `${config.apiKey.slice(-6)}:${config.modelName}:${agentId}` };
+	const engine = { ctx: new Context(), agent: null, bootError: null, config, configKey: `${config.apiKey}:${config.modelName}:${agentId}` };
 	const boot = async (ctx) => {
 		const adapter = adapterFactory();
 		ctx.llm.registerAdapter(["deepseek"], adapter);
@@ -118,6 +118,7 @@ async function createEngine(config, adapterFactory, agentId) {
 	root.plugin(boot).then(
 		() => {},
 		(err) => {
+			engine.bootError = err;
 			if (typeof console !== "undefined" && console.error) {
 				console.error("[dshmini] boot FAILED:", err?.stack ?? String(err));
 			}
@@ -129,7 +130,7 @@ async function createEngine(config, adapterFactory, agentId) {
 
 /** Boot (once per apiKey+model) the DSH context and its agent. */
 export async function bootDsh(config) {
-	const configKey = `${config.apiKey.slice(-6)}:${config.modelName}`;
+	const configKey = `${config.apiKey}:${config.modelName}`;
 	if (booted && booted.configKey === configKey) {
 		if (!booted.agent) await waitEngineAgent(booted);
 		return booted;
@@ -211,6 +212,7 @@ export async function selfTest(config) {
 async function waitEngineAgent(engine, timeoutMs = 20000) {
 	const started = Date.now();
 	while (engine && !engine.agent) {
+		if (engine.bootError) throw engine.bootError;
 		if (Date.now() - started > timeoutMs) {
 			throw new Error("DSH engine agent did not start within 20s");
 		}

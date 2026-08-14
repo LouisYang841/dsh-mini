@@ -50,12 +50,17 @@ const localBashOperations = {
 				if (signal.aborted) onAbort();
 				else signal.addEventListener("abort", onAbort, { once: true });
 			}
+			let spawnError = null;
 			const exitCode = await new Promise((resolve) => {
-				child.on("error", () => resolve(null));
+				child.on("error", (error) => {
+					spawnError = error;
+					resolve(null);
+				});
 				child.on("close", (code) => resolve(code));
 			});
 			if (signal?.aborted) throw new Error("aborted");
 			if (timedOut) throw new Error(`timeout:${timeout}`);
+			if (spawnError) throw new Error(`spawn failed: ${spawnError.message}`);
 			return { exitCode };
 		} finally {
 			if (timeoutHandle) clearTimeout(timeoutHandle);

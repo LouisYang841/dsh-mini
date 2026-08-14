@@ -12,7 +12,7 @@ export class EventEmitter {
 	once(type, fn) {
 		const wrapped = (...args) => {
 			this.off(type, wrapped);
-			return fn(...args);
+			return fn.apply(this, args);
 		};
 		return this.on(type, wrapped);
 	}
@@ -31,13 +31,7 @@ export class EventEmitter {
 	emit(type, ...args) {
 		const arr = this._listeners.get(type);
 		if (!arr) return false;
-		for (const fn of [...arr]) {
-			try {
-				fn(...args);
-			} catch {
-				// EventEmitter spec: emit ignores listener errors
-			}
-		}
+		for (const fn of [...arr]) fn.apply(this, args);
 		return true;
 	}
 	listenerCount(type) {

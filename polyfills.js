@@ -47,7 +47,7 @@ if (typeof globalThis.process === "undefined") {
 		version: "v22.22.1",
 		versions: { node: "22.22.1" },
 		nextTick: (fn) => queueMicrotask(fn),
-		cwd: () => "/home/ubuntu/Dsh_workspace/spike",
+		cwd: () => (typeof globalThis.__DSH_CWD === "string" ? globalThis.__DSH_CWD : "/"),
 		hrtime: () => [0, 0],
 		pid: 1,
 		exit: () => {},
@@ -55,7 +55,12 @@ if (typeof globalThis.process === "undefined") {
 }
 
 // ---- crypto (global) ----
-if (typeof globalThis.crypto === "undefined") {
+// `test-random.js` supplies a deterministic hook for the conformance driver.
+// Production hosts either have a native crypto object or must provide
+// `globalThis.__DSH_GET_RANDOM_VALUES`; the shim otherwise throws loud.
+if (!isNode && globalThis.__DSH_CONFORMANCE === true && typeof globalThis.__DSH_GET_RANDOM_VALUES === "function") {
+	globalThis.crypto = { randomUUID, getRandomValues: globalThis.__DSH_GET_RANDOM_VALUES };
+} else if (typeof globalThis.crypto === "undefined") {
 	globalThis.crypto = { randomUUID, getRandomValues };
 } else if (typeof globalThis.crypto.randomUUID === "undefined") {
 	globalThis.crypto.randomUUID = randomUUID;
@@ -132,6 +137,7 @@ if (typeof globalThis.structuredClone === "undefined") {
 		const seen = new WeakMap();
 		function clone(x) {
 			if (x === null || typeof x !== "object") return x;
+			if (seen.has(x)) return seen.get(x);
 			if (x instanceof Date) return new Date(x.getTime());
 			if (x instanceof RegExp) return new RegExp(x.source, x.flags);
 			if (x instanceof Map) {
@@ -148,7 +154,6 @@ if (typeof globalThis.structuredClone === "undefined") {
 			}
 			if (ArrayBuffer.isView(x)) return new x.constructor(x);
 			if (x instanceof ArrayBuffer) return x.slice(0);
-			if (seen.has(x)) return seen.get(x);
 			if (Array.isArray(x)) {
 				const a = [];
 				seen.set(x, a);
@@ -218,8 +223,15 @@ if (typeof globalThis.AbortController === "undefined") {
 			}
 			return out;
 		}
-		static timeout() {
-			return new AbortSignalPoly();
+		static timeout(ms) {
+			const out = new AbortSignalPoly();
+			const delay = Number.isFinite(Number(ms)) ? Number(ms) : 0;
+			if (typeof setTimeout === "function") {
+				setTimeout(() => out._abort(new Error("TimeoutError")), Math.max(0, delay));
+			} else {
+				Promise.resolve().then(() => out._abort(new Error("TimeoutError")));
+			}
+			return out;
 		}
 		_abort(reason) {
 			this.aborted = true;

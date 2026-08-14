@@ -25,6 +25,7 @@ license text at the end of this file, with these copyright holders:
 | `marked` | © Christopher Jeffrey and contributors |
 | `xmlchars` | © Louis-Dominique Dubeau |
 | `get-east-asian-width` | © Sindre Sorhus |
+| `ansi-regex`, `strip-ansi` (vendored logic in `vendor-pi/ansi.ts`) | © Sindre Sorhus |
 
 ## Apache-2.0 components (bundled)
 
@@ -32,13 +33,13 @@ Licensed under the Apache License, Version 2.0 (full text:
 https://www.apache.org/licenses/LICENSE-2.0). The license text must be
 distributed with the artifact; the release checklist includes it.
 
-| Component |
-|---|
-| `@aws-sdk/client-bedrock-runtime` |
-| `@google/genai` |
-| `@mistralai/mistralai` |
-| `@opentelemetry/api` |
-| `@smithy/node-http-handler` |
+| Component | Copyright / attribution |
+|---|---|
+| `@aws-sdk/client-bedrock-runtime` | © AWS SDK for JavaScript Team |
+| `@google/genai` | © Google LLC and contributors |
+| `@mistralai/mistralai` | © Mistral AI |
+| `@opentelemetry/api` | © OpenTelemetry Authors |
+| `@smithy/node-http-handler` | © AWS SDK for JavaScript Team / Smithy contributors |
 
 ## Other licenses (bundled)
 

@@ -22,12 +22,12 @@ export function sessionLogPath() {
 async function fileExists(path) {
 	try {
 		const result = await toolCall({ name: "file_exists", params: { path } });
-		if (result && typeof result === "object") {
-			if (result.success === false) return false;
-			const text = JSON.stringify(result);
-			return /"exists"\s*:\s*true|true/i.test(text);
+		const parsed = typeof result === "string" ? JSON.parse(result) : result;
+		if (parsed && typeof parsed === "object") {
+			if (parsed.success === false) return false;
+			if (Object.prototype.hasOwnProperty.call(parsed, "exists")) return parsed.exists === true || parsed.exists === "true";
 		}
-		return Boolean(result);
+		return false;
 	} catch {
 		return false;
 	}
@@ -72,10 +72,13 @@ export async function appendSessionEvents(engine) {
 	}
 	const events = engine.agent.session.events;
 	const lines = existing.split("\n").filter((line) => line.trim().length > 0);
-	lines.push(...events.map(serializeEvent));
+	// `session.events` is the cumulative log, not a per-turn delta. Append only
+	// events after the persisted prefix so each event is written once.
+	const newEvents = lines.length <= events.length ? events.slice(lines.length) : [];
+	lines.push(...newEvents.map(serializeEvent));
 	while (lines.length > MAX_KEPT_EVENTS) lines.shift();
 	await writeText(path, lines.join("\n") + "\n");
-	return { path, events: lines.length };
+	return { path, events: lines.length, appended: newEvents.length };
 }
 
 /** Read the persisted log (for diagnostics and future resume). */

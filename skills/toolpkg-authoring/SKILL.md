@@ -18,8 +18,10 @@ Full contract: [`docs/toolpackages.md`](../../docs/toolpackages.md).
    `additionalProperties` explicitly, otherwise registration fails.
 4. `command` runs from the manifest directory. JSON args arrive on stdin;
    print one JSON value on stdout.
-5. Run `/tools reload`, then `/tools` to see registration count and errors.
-6. Custom tools appear only in `standard` mode; `minimal` stays
+5. Secret-looking env vars are stripped by default; a tool that needs one
+   declares `"allowEnv": ["DEEPSEEK_API_KEY"]` in its manifest.
+6. Run `/tools reload`, then `/tools` to see registration count and errors.
+7. Custom tools appear only in `standard` mode; `minimal` stays
    `bash + str_replace_editor`.
 
 ## Minimal manifest
@@ -33,7 +35,8 @@ Full contract: [`docs/toolpackages.md`](../../docs/toolpackages.md).
   },
   "output": { "type": "object", "additionalProperties": true },
   "command": ["node", "./my-tool.mjs"],
-  "timeoutMs": 30000
+  "timeoutMs": 30000,
+  "allowEnv": []
 }
 ```
 
