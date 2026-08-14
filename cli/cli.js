@@ -267,12 +267,6 @@ function spawnConfiguredProcess(mode, args) {
 	return child;
 }
 
-/** Spawn the replacement dsh-mini process used by /new and /mode in the
- * community TUI. The old process exits after a short flush grace. */
-function spawnFreshProcess(mode) {
-	return spawnConfiguredProcess(mode, restartArgs());
-}
-
 /** Mounted as its own fiber before the community TUI so the provided service is
  * active when that plugin reads `ctx.get("tuiResumeHost")` (strict service
  * reads ignore providers whose fiber is still loading). */
@@ -316,6 +310,37 @@ const boot = async (ctx) => {
 			// best-effort durability checkpoint before a process/session switch
 		}
 	};
+
+	/** Replace this process with a fresh dsh-mini launch. execve keeps ONE
+	 * process on the terminal, so the TUI can stop/restore the terminal before
+	 * the replacement starts — spawn+exit briefly leaves two raw-mode owners
+	 * racing over the same pty and leaks terminal-negotiation bytes into the
+	 * CLI. Without execve (some Windows hosts), fall back to spawn+exit. */
+	const restartProcess = async (args, mode) => {
+		const entry = process.argv[1];
+		const execve = process.execve?.bind(process);
+		if (entry === undefined || execve === undefined) {
+			spawnConfiguredProcess(mode, args);
+			setTimeout(() => process.exit(0), 300);
+			return;
+		}
+		try {
+			await ctx.root.fiber.dispose();
+		} catch {
+			// teardown is best-effort; execve below is the real exit boundary
+		}
+		try {
+			execve(process.execPath, [process.execPath, ...process.execArgv, entry, ...args], {
+				...process.env,
+				DSH_FRESH: "1",
+				DSH_MODE: mode,
+			});
+			throw new Error("process replacement returned unexpectedly");
+		} catch (error) {
+			process.stderr.write(`dsh-mini: restart failed after terminal release: ${String(error)}\n`);
+			process.exit(1);
+		}
+	};
 	if (TTY && !process.env.DSH_NO_BANNER) process.stdout.write(renderBanner());
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
 	// /new: available in every renderer. In the community TUI it restarts the
@@ -336,8 +361,7 @@ const boot = async (ctx) => {
 		description: "Start a fresh session (restarts with a new session id)",
 		handler: async (invocation) => {
 			await flushSession(invocation.agent.session);
-			spawnFreshProcess(currentMode);
-			setTimeout(() => process.exit(0), 300);
+			await restartProcess(restartArgs(), currentMode);
 			return { kind: "success", text: `starting a fresh session (${currentMode} mode)` };
 		},
 	});
@@ -366,8 +390,7 @@ const boot = async (ctx) => {
 			if (!next) return { kind: "success", text: providersText() };
 			if (!PROVIDER_DEFAULTS[next]) return { kind: "error", text: `unknown provider "${next}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})` };
 			await flushSession(invocation.agent.session);
-			spawnConfiguredProcess(currentMode, providerRestartArgs(next));
-			setTimeout(() => process.exit(0), 300);
+			await restartProcess(providerRestartArgs(next), currentMode);
 			return { kind: "success", text: `restarting with provider ${next}` };
 		},
 	});
@@ -382,8 +405,7 @@ const boot = async (ctx) => {
 			// The community TUI owns its session id, so switching mode restarts
 			// the process with a fresh session, exactly like /new.
 			await flushSession(invocation.agent.session);
-			spawnFreshProcess(next);
-			setTimeout(() => process.exit(0), 300);
+			await restartProcess(restartArgs(), next);
 			return { kind: "success", text: `restarting in ${next} mode` };
 		},
 	});

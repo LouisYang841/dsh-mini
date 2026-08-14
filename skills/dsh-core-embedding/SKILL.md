@@ -288,11 +288,18 @@ byte-for-byte. Rules:
   `invocation.args` makes every argument look empty — `/mode standard`
   silently behaved like `/mode`.
 - **Process-restart commands must preserve launch args and flush first**:
-  `/new` and `/mode` in the cc-tui re-exec `process.argv[1]`; strip
-  `--resume*`/`--mode*`/`--sessions`, keep positional model and `--provider`,
-  pass the target mode through `DSH_MODE`, and `await ctx.sessions.flush(...)`
-  before spawning. The raw `ctx.emit("session/flush", ...)` is not awaitable
-  and can lose the outgoing session's tail.
+  `/new`, `/mode`, and `/provider` in the cc-tui re-exec `process.argv[1]`;
+  strip `--resume*`/`--mode*`/`--sessions`, keep positional model and
+  `--provider`, pass the target mode through `DSH_MODE`, and
+  `await ctx.sessions.flush(...)` before replacing the process. The raw
+  `ctx.emit("session/flush", ...)` is not awaitable and can lose the outgoing
+  session's tail.
+- **Restart with `process.execve`, never spawn+exit over a live TUI**: a
+  detached child inheriting the same pty starts a second raw-mode TUI while
+  the parent exits; the terminal's Kitty-keyboard response (`CSI ? flags u`)
+  can leak into the CLI as text like `64;1;2;6;9;15;18;21;22` and the shell
+  can land outside the TUI. Dispose the root fiber (which restores the
+  terminal), then `execve` so exactly one process owns the terminal.
 - **Session switches in plain/basic mode must flush the outgoing agent**
   (`await ctx.sessions.flush(old.session)`) before replacing it, otherwise an
   immediate `/exit` can lose the just-left session.
