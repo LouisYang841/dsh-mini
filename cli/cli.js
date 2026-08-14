@@ -1,7 +1,7 @@
 // dsh-mini: an interactive coding-agent CLI.
-// The pi-CLI idea in minimal form: DSH core (real AgentLoop/ToolRuntime/
-// SessionStore/SystemPrompt) + a real provider adapter (Gemini AI Studio SSE)
-// + real fs tools, driven from a tiny terminal REPL on Node.
+// The pi-CLI idea in minimal form: pi's shell conventions (TUI, sessions
+// directory, resume UX) + DSH's engine AND state (AgentLoop, ToolRuntime,
+// event-sourced sessions with the DSH JSONL persistence backend).
 import "../polyfills.js";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
@@ -12,15 +12,26 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
 import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
+import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { GeminiAdapter } from "./gemini-adapter.js";
 import { NodeFs } from "./node-fs.js";
 import * as readline from "node:readline";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 const API_KEY = process.env.GEMINI_API_KEY ?? "GEMINI_API_KEY_REDACTED";
-const MODEL = process.argv[2] ?? "gemini-flash-latest";
 const CWD = process.cwd();
+const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
 // ANSI TUI when both stdio ends are terminals (pipes/CI get plain mode).
 const TTY = !!process.stdout.isTTY && !!process.stdin.isTTY && !process.env.DSH_PLAIN;
+
+// CLI args: node cli.mjs [model] [--resume <id>] [--sessions]
+const ARGS = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const FLAGS = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith("--")).map((a) => [a, true]));
+const RESUME_INDEX = process.argv.indexOf("--resume");
+const RESUME_ID = RESUME_INDEX >= 0 ? process.argv[RESUME_INDEX + 1] : undefined;
+const LIST_SESSIONS = process.argv.includes("--sessions");
+const MODEL = ARGS[0] ?? "gemini-flash-latest";
 
 const PERSONA = [
 	"You are dsh-mini, a compact interactive coding agent CLI built on the DeepSeek Harness core.",
@@ -84,22 +95,47 @@ function makeStatusBar({ getModel, getUsage }) {
 
 // ---- boot + REPL ----
 
-let sessionCounter = 0;
+process.on("unhandledRejection", (r) => console.error("[proc] unhandledRejection:", r?.stack ?? String(r)));
 
-const boot = (ctx) => {
+const boot = async (ctx) => {
 	ctx.llm.registerAdapter(["google"], new GeminiAdapter(API_KEY));
 
+	if (LIST_SESSIONS) {
+		const headers = await ctx.sessionPersistence.list();
+		for (const header of headers) {
+			console.log(`${header.id}\t${header.cwd ?? ""}\t${header.createdAt ?? ""}\t${header.eventCount ?? ""}`);
+		}
+		process.exit(0);
+	}
+
 	const makeAgent = (model) => {
-		sessionCounter += 1;
 		return ctx.agentLoop.create(
-			`cli-session-${sessionCounter}`,
+			`cli-${Date.now().toString(36)}`,
 			{ provider: "google", model },
 			{ cwd: CWD },
 		);
 	};
 
-	let agent = makeAgent(MODEL);
+	let agent;
 	let currentModel = MODEL;
+	if (RESUME_ID) {
+		try {
+			const published = await Promise.race([
+				ctx.agentLoop.resume(ctx, {
+					resumeSessionId: RESUME_ID,
+					agentOptions: { provider: "google", model: currentModel },
+				}),
+				new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
+			]);
+			agent = published.agent;
+			console.log(`(resumed ${RESUME_ID})`);
+		} catch (err) {
+			console.error("[resume] FAILED:", err?.stack ?? String(err));
+			throw err;
+		}
+	} else {
+		agent = makeAgent(currentModel);
+	}
 	let usage = undefined;
 	const status = TTY ? makeStatusBar({ getModel: () => currentModel, getUsage: () => usage }) : { draw() {} };
 
@@ -122,7 +158,8 @@ const boot = (ctx) => {
 	out("\n");
 	console.log(`dsh-mini — DSH core + ${MODEL} @ Google AI Studio`);
 	console.log(`workspace: ${CWD}`);
-	console.log("commands: /clear  /model <id>  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
+	console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
+	console.log("commands: /clear  /model <id>  /sessions  /exit   (AI Studio 免费配额按模型独立，429 就换模型)");
 	console.log("");
 	status.draw();
 
@@ -138,8 +175,15 @@ const boot = (ctx) => {
 				if (trimmed === "/clear") {
 					agent.cancel({ kind: "user-clear" });
 					agent = makeAgent(currentModel);
-					console.log("(new session)");
+					console.log(`(new session: ${agent.session.id})`);
 					status.draw();
+					return ask();
+				}
+				if (trimmed === "/sessions") {
+					const headers = await ctx.sessionPersistence.list();
+					for (const header of headers) {
+						console.log(`${header.id}\t${header.cwd ?? ""}\t${header.createdAt ?? ""}\t${header.eventCount ?? ""}`);
+					}
 					return ask();
 				}
 				if (trimmed.startsWith("/model ")) {
@@ -148,12 +192,12 @@ const boot = (ctx) => {
 						agent.cancel({ kind: "user-model-switch" });
 						currentModel = next;
 						agent = makeAgent(next);
-						console.log(`(switched to ${next})`);
+						console.log(`(switched to ${next}, new session: ${agent.session.id})`);
 						status.draw();
 					}
 					return ask();
 				}
-				agent.followup(createUserMessage({ content: [{ type: "text", text: trimmed }] }));
+				agent.followup(createUserMessage({ content: [{ type: "text", text: trimmed }], source: { kind: "user" } }));
 				await agent.whenIdle();
 				status.draw();
 				out("\n");
@@ -166,7 +210,7 @@ const boot = (ctx) => {
 	};
 	ask();
 };
-boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop"];
+boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence"];
 
 const root = new Context();
 const mount = (label, plugin, config) => {
@@ -181,6 +225,7 @@ mount("systemPrompt", SystemPrompt, { persona: PERSONA, includeHarnessIdentity: 
 mount("tools", ToolRuntime, { mode: "native" });
 mount("llm", LlmRuntime);
 mount("fs", NodeFs, { cwd: CWD });
+mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR });
 mount("tool-fs", fsTools);
 mount("tool-todo", todoTools);
 mount("agentLoop", AgentLoop, { maxParallelToolCalls: 4 });

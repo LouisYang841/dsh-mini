@@ -15,5 +15,6 @@ $ESBUILD cli/cli.js \
   --platform=node \
   --target=node22 \
   --outfile=cli/cli.mjs \
+  --external:koffi \
   --log-level=warning
 echo "built: cli/cli.mjs ($(wc -c < cli/cli.mjs) bytes)"

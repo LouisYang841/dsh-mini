@@ -110,6 +110,40 @@ byte-for-byte. Rules:
   a new `node:*` import in upstream surfaces as either a bundle error or a
   loud shim failure (`fs.js`/`sqlite.js` stubs throw on use).
 
+
+## Persistence & resume pitfalls (CLI layer)
+
+- **Cordis function-plugin async bodies are fire-and-forget**: `fiber.await()`
+  resolves once the plugin callback RETURNS — a pending promise does not keep
+  it pending, and a rejection is invisible unless you attach handlers.
+  `[mount] X OK` therefore means "loaded", NOT "body finished". Wrap long
+  bodies in try/catch, race them against timeouts, and always attach
+  `.then(ok, err)` to every `root.plugin(...)` fiber.
+- **argv parsing**: `process.argv[indexOf("--resume") + 1]` returns argv[0]
+  when the flag is absent (indexOf = -1). Guard with an explicit index check.
+- **JSONL backend mount is enough**: `dsh-session-persistence-jsonl`
+  registers as `ctx.sessionPersistence` and installs its own write path
+  (200 ms batch window; `session/flush` is emitted by the optional
+  checkpoint-policy plugin, not required). Do NOT also mount
+  `dsh-session-persistence` (the shared coordinator package is pulled
+  transitively; the backend embeds its coordinator instance).
+- **Coordinator swallows creation errors** (`live.init.catch(() => {})`):
+  a failed first write is invisible. Verify with `sessionPersistence.list()`
+  after the first turn; if it is empty, check the sessions root is writable
+  (in this dev sandbox, writes outside the workspace are denied — use
+  `DSH_SESSIONS=/tmp/...` for tests).
+- **Restore validation is stricter than live append**: persisted sessions
+  are validated on load; user messages WITHOUT a `source` fail with
+  "message has invalid source". Always create user messages with
+  `source: { kind: "user" }`.
+- **Sessions are stored per-cwd** under the configured root
+  (`--<sanitized-cwd>--/<id>.jsonl`, zstd by default via node:zlib on
+  Node 22+; the backend needs `--external:koffi` when bundling — koffi is
+  only loaded on Windows).
+- **Resume flow**: `ctx.agentLoop.resume(ctx, { resumeSessionId, agentOptions })`
+  returns `{ agent, dispose }`; it reads `sessionPersistence` via
+  `ctx.get("sessionPersistence")` from the AgentLoop's own context.
+
 ## Adding a new host (checklist)
 
 1. Copy the boot-plugin pattern from `main.js`/`cli/cli.js` (inject list:

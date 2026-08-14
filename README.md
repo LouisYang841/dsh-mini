@@ -50,19 +50,27 @@ node cli/cli.mjs [model]
 - Tools: the REAL `dsh-tool-fs` tools (read/write/edit/list) + `dsh-tool-todo`,
   backed by a minimal node:fs implementation of the dsh `fs` service
   (`cli/node-fs.js`).
-- REPL: `/clear`, `/model <id>`, `/exit`; live event rendering from the
-  session firehose.
+- Persistence: the REAL DSH JSONL backend (`dsh-session-persistence-jsonl`,
+  zstd, per-cwd layout); sessions survive restarts, `--resume <id>` resumes,
+  `--sessions` lists. Verified cross-process memory (secret-code test).
+- REPL: `/clear`, `/model <id>`, `/sessions`, `/exit`; live event rendering
+  from the session firehose; ANSI status bar with live token usage.
 
 Commands:
 ```
 cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 ./run.sh                  # engine conformance (Node + QuickJS, diff vs baseline)
 ./build.sh                # portable engine bundle only
+node cli/cli.mjs [model] [--resume <id>] [--sessions]   # DSH_SESSIONS overrides the sessions dir
 ```
+
+Architecture (engine/host seams, retrofit recipe, upgrade policy):
+`ARCHITECTURE.md`. Pitfalls and host-integration checklist:
+`skills/dsh-core-embedding/SKILL.md`.
 
 ## Roadmap
 
-- [ ] pi-style TUI shell (DSH session events → pi AgentEvent translator)
-- [ ] Session persistence (JSONL backend) + resume
+- [ ] pi-tui shell (the real `@earendil-works/pi-tui` framework; event → component bridge)
+- [ ] Session stats + compaction on resume
 - [ ] Bash tool + sandbox policy for the Node profile
 - [ ] Operit QuickJS host bridge (long-lived event loop + JNI bridge)
