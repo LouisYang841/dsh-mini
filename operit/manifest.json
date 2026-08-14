@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "toolpkg_id": "com.dshmini.operit",
+  "version": "0.1.0",
+  "main": "dist/main.js",
+  "display_name": {
+    "zh": "DSH mini — DeepSeek Harness 引擎",
+    "en": "DSH mini — DeepSeek Harness engine"
+  },
+  "description": {
+    "zh": "把 dsh-mini 的便携引擎注册为 Operit 的 AI provider：DSH 官方 agent loop（turn/step 状态机、工具调度、会话）跑在 Operit 的 JS 运行时里，工具走 Operit 的终端/文件/网络触手。",
+    "en": "Registers the dsh-mini portable engine as an Operit AI provider: the official DSH agent loop (turn/step machine, tool scheduling, sessions) runs inside Operit's JS runtime, with tools routed through Operit's terminal/filesystem/network capabilities."
+  },
+  "enabled_by_default": false,
+  "subpackages": []
+}

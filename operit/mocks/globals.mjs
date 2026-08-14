@@ -1,0 +1,115 @@
+// Node-side fakes of Operit's JS-runtime globals. Lets operit/dist/main.js
+// (built for Operit's QuickJS) run under Node for verification:
+//   - ToolPkg.registerAiProvider records the provider definition
+//   - OkHttp mirrors the example client API over node fetch + streams
+//   - toolCall implements the same tool names as operit/src/tools.js
+//   - sendIntermediateResult collects relayed chunks
+
+import { exec as nodeExec } from "node:child_process";
+import { promisify } from "node:util";
+const execAsync = promisify(nodeExec);
+
+export const relayedChunks = [];
+
+globalThis.ToolPkg = {
+	registerAiProvider(config) {
+		globalThis.__dshProvider = config;
+	},
+	ActivePromptSnapshot: {},
+};
+
+globalThis.sendIntermediateResult = (payload) => {
+	if (payload?.chunk) {
+		relayedChunks.push(payload.chunk);
+		process.stdout.write(payload.chunk);
+	}
+};
+
+class MockRequest {
+	constructor(client) {
+		this.client = client;
+		this._url = "";
+		this._method = "GET";
+		this._headers = {};
+		this._body = null;
+		this._bodyType = "text";
+	}
+	url(u) {
+		this._url = u;
+		return this;
+	}
+	method(m) {
+		this._method = m;
+		return this;
+	}
+	headers(h) {
+		this._headers = { ...this._headers, ...h };
+		return this;
+	}
+	body(b, type) {
+		this._body = b;
+		this._bodyType = type || "text";
+		return this;
+	}
+	build() {
+		return this;
+	}
+	async execute(options) {
+		const body = this._bodyType === "json" ? JSON.stringify(this._body) : String(this._body ?? "");
+		const response = await fetch(this._url, { method: this._method, headers: this._headers, body });
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => "")}`);
+		}
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			options?.onIntermediateResult?.({ type: "chunk", chunk: decoder.decode(value, { stream: true }) });
+		}
+		return { isSuccessful: () => true, statusCode: response.status };
+	}
+}
+
+class MockOkHttp {
+	static newBuilder() {
+		return new MockOkHttp();
+	}
+	connectTimeout() {
+		return this;
+	}
+	readTimeout() {
+		return this;
+	}
+	writeTimeout() {
+		return this;
+	}
+	build() {
+		return this;
+	}
+	newRequest() {
+		return new MockRequest(this);
+	}
+}
+
+globalThis.OkHttp = MockOkHttp;
+
+globalThis.toolCall = async ({ name, params }) => {
+	if (name === "shell_exec") {
+		const command = params?.command ?? params?.cmd ?? "";
+		const timeoutMs = Number(params?.timeout_ms ?? params?.timeoutMs ?? 60000);
+		try {
+			const { stdout, stderr } = await execAsync(command, { timeout: Math.min(timeoutMs, 300000), maxBuffer: 10 * 1024 * 1024 });
+			const output = `${stdout}${stderr}`;
+			return { success: true, result: output || "(no output)" };
+		} catch (error) {
+			const output = `${error.stdout ?? ""}${error.stderr ?? ""}${error.message ?? error}`;
+			return { success: error.code === 0, result: output || "(no output)" };
+		}
+	}
+	return { success: false, error: `mock toolCall: unknown tool "${name}"` };
+};
+
+// The build targets Operit's QuickJS, which has neither TextDecoder nor
+// fetch-free Web Streams — but the mock transport runs on Node where both
+// exist globally. Nothing to add.
