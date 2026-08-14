@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "pi shell + DeepSeek Harness core: portable agent engine + coding-agent CLI. Zero runtime npm dependencies — everything is bundled into the release artifacts.",
+  "description": "pi shell + DeepSeek Harness core: portable agent engine + coding-agent CLI. Zero runtime npm dependencies \u2014 everything is bundled into the release artifacts.",
   "license": "MIT",
   "scripts": {
     "build": "bash build.sh",
@@ -46,7 +46,11 @@
     "@deepseek-ai/dsh-tool-skill": "0.1.0-rc.6",
     "@deepseek-ai/dsh-compaction-basic": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-title": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-title-first-prompt-llm": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-session-title-first-prompt-llm": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-goal": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-goal-round-driver": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-plan-mode": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tool-goal": "0.1.0-rc.6"
   },
   "keywords": [
     "deepseek-harness",
