@@ -29,6 +29,8 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
   re-scans. Tools run as child processes with JSON stdin/stdout, so the agent
   can write its own tools (for example a `web_search` backed by
   `DEEPSEEK_API_KEY`) without in-process evaluation or new runtime deps.
+  Contract: `docs/toolpackages.md`; agent checklist:
+  `skills/toolpkg-authoring/SKILL.md`.
 
 ## P0 — done
 

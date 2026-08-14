@@ -69,7 +69,7 @@ dsh-mini
 
 ## 自定义工具（toolpackages）
 
-Agent 或用户可以给 dsh-mini 写自己的工具。扫描目录是 `<cwd>/tools/` 和 `~/.dsh-mini/tools/`：每个工具由 `*.tool.json` manifest 加一个可执行文件组成。manifest 声明 `name` / `description` / `parameters` / `output` / `command`；执行时 dsh-mini spawn 该命令，JSON 参数走 stdin，结果从 stdout 读回 JSON。写完后 `/tools reload` 热加载，完整工具在 `standard` 模式可见。
+Agent 或用户可以给 dsh-mini 写自己的工具。扫描目录是 `<cwd>/tools/` 和 `~/.dsh-mini/tools/`：每个工具由 `*.tool.json` manifest 加一个可执行文件组成。manifest 声明 `name` / `description` / `parameters` / `output` / `command`；执行时 dsh-mini spawn 该命令，JSON 参数走 stdin，结果从 stdout 读回 JSON。写完后 `/tools reload` 热加载，完整工具在 `standard` 模式可见。完整契约见 [`docs/toolpackages.md`](docs/toolpackages.md)，agent 开发时可加载 [`skills/toolpkg-authoring/SKILL.md`](skills/toolpkg-authoring/SKILL.md)。
 
 ## 许可证
 

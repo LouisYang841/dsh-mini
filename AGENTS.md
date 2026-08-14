@@ -99,6 +99,7 @@ only for final smoke; AI Studio free quota is per model, switch models.
 - `cli/gemini-adapter.js` — seam ① reference adapter
 - `cli/mode-bootstrap.js` — minimal/standard mode fold + prompt/tool filter
 - `cli/tool-scanner.js` — out-of-process toolpackage scan/register/run
+- `docs/toolpackages.md` + `skills/toolpkg-authoring/SKILL.md` — custom-tool contract
 - `cli/node-fs.js` — seam ② reference implementation
 - `cli/bash-tool.js` + `vendor-pi/` — pi-native bash tool (seam ③ untouched)
 - `cli/banner.js` — hermes-style ANSI-Shadow banner, DeepSeek-blue gradient, width-adaptive
