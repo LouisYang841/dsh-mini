@@ -67,6 +67,10 @@ dsh-mini
 
 新会话默认 **minimal 模式**：system prompt 固定为官方 Minimal 的完整 persona，模型只看到 `bash` + `str_replace_editor`。用 `--mode standard`、`DSH_MODE=standard` 或会话内 `/mode standard` 切到完整工具目录；模式作为 durable session event 保存，resume 时自动恢复。
 
+## 自定义工具（toolpackages）
+
+Agent 或用户可以给 dsh-mini 写自己的工具。扫描目录是 `<cwd>/tools/` 和 `~/.dsh-mini/tools/`：每个工具由 `*.tool.json` manifest 加一个可执行文件组成。manifest 声明 `name` / `description` / `parameters` / `output` / `command`；执行时 dsh-mini spawn 该命令，JSON 参数走 stdin，结果从 stdout 读回 JSON。写完后 `/tools reload` 热加载，完整工具在 `standard` 模式可见。
+
 ## 许可证
 
 自身代码 MIT；全部拼装组件的归属声明见 `THIRD_PARTY_LICENSES.md`（随 release 分发）。
@@ -142,8 +146,12 @@ node cli/cli.mjs [model]
   catalog. Select via
   `--mode <id>`, `DSH_MODE`, or `/mode <id>`; the active mode is recorded as
   a durable session event and restored on resume.
-- REPL: `/clear`, `/model <id>`, `/mode [id]`, `/sessions`, `/exit`; live event
-  rendering from the session firehose; ANSI status bar with live token usage.
+- Toolpackages: `<cwd>/tools` and `~/.dsh-mini/tools` are scanned for
+  `*.tool.json` manifests. Each tool runs out-of-process with JSON on
+  stdin/stdout; `/tools reload` re-scans without restarting.
+- REPL: `/clear`, `/model <id>`, `/mode [id]`, `/sessions`, `/tools [reload]`,
+  `/exit`; live event rendering from the session firehose; ANSI status bar
+  with live token usage.
 
 Commands:
 ```

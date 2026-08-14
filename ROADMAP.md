@@ -24,6 +24,11 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
   sessions fall back to `standard`.
 - [x] **Plan-mode mount fixed**: `exit_plan_mode` is now actually registered
   (the plan-mode plugin requires its `section` config).
+- [x] **Out-of-process toolpackages**: `<cwd>/tools` + `~/.dsh-mini/tools`
+  manifests (`*.tool.json`) become normal DSH tools at boot; `/tools reload`
+  re-scans. Tools run as child processes with JSON stdin/stdout, so the agent
+  can write its own tools (for example a `web_search` backed by
+  `DEEPSEEK_API_KEY`) without in-process evaluation or new runtime deps.
 
 ## P0 — done
 

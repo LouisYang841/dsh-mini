@@ -44,6 +44,7 @@ import { createTuiHost } from "./tui-renderer.js";
 import { renderBanner } from "./banner.js";
 import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import { appendMode, apply as applyModeBootstrap, foldMode, isValidMode, LEGACY_FALLBACK_MODE, MODES } from "./mode-bootstrap.js";
+import { registerToolpackages, scanToolpackages } from "./tool-scanner.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -55,6 +56,7 @@ import { homedir } from "node:os";
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const CWD = process.cwd();
 const SESSIONS_DIR = process.env.DSH_SESSIONS ?? join(homedir(), ".dsh-mini", "sessions");
+const TOOL_ROOTS = [...new Set([join(CWD, "tools"), join(homedir(), ".dsh-mini", "tools")])];
 // node:zlib zstd is built into Node >= 22.15 (no system lib); degrade to
 // uncompressed JSONL on older runtimes (e.g. some Termux images).
 const HAS_ZSTD = typeof zstdCompress === "function";
@@ -312,6 +314,39 @@ const boot = async (ctx) => {
 		}
 	};
 
+	/** Out-of-process toolpackages live in `<cwd>/tools` and
+	 * `~/.dsh-mini/tools`. They are normal DSH tools registered at boot and
+	 * can be re-scanned without restarting. */
+	let toolpackages = { disposers: [], errors: [] };
+	const refreshToolpackages = async () => {
+		for (const dispose of toolpackages.disposers) {
+			try {
+				await dispose();
+			} catch {
+				// a stale disposer must not block the rescan
+			}
+		}
+		const scanned = scanToolpackages(TOOL_ROOTS);
+		const registered = registerToolpackages(ctx, scanned.definitions);
+		toolpackages = registered;
+		return {
+			errors: [...scanned.errors, ...registered.errors],
+			count: registered.disposers.length,
+			roots: TOOL_ROOTS,
+		};
+	};
+	const toolpackagesStatus = (result = { errors: toolpackages.errors, count: toolpackages.disposers.length, roots: TOOL_ROOTS }) => {
+		const lines = [
+			`toolpackages: ${result.count} registered`,
+			`roots: ${result.roots.join(", ")}`,
+		];
+		if (result.errors.length > 0) {
+			lines.push("errors:");
+			for (const error of result.errors) lines.push(`- ${error.file ?? error.name}: ${error.message}`);
+		}
+		return lines.join("\n");
+	};
+
 	/** Replace this process with a fresh dsh-mini launch. execve keeps ONE
 	 * process on the terminal, so the TUI can stop/restore the terminal before
 	 * the replacement starts — spawn+exit briefly leaves two raw-mode owners
@@ -378,6 +413,17 @@ const boot = async (ctx) => {
 		},
 	});
 	ctx.commands.register({
+		name: "tools",
+		description: "List or reload out-of-process toolpackages",
+		input: { hint: "[reload]" },
+		handler: async (invocation) => {
+			const arg = (invocation.rawInput ?? "").trim();
+			const result = arg === "reload" ? await refreshToolpackages() : undefined;
+			if (arg && arg !== "reload") return { kind: "error", text: `unknown toolpackages argument "${arg}" (use /tools reload)` };
+			return { kind: "success", text: toolpackagesStatus(result) };
+		},
+	});
+	ctx.commands.register({
 		name: "stats",
 		description: "Show session turn, message, tool, and token counters",
 		handler: async (invocation) => ({ kind: "success", text: formatStats(invocation.agent.session.events) }),
@@ -423,6 +469,7 @@ const boot = async (ctx) => {
 		commonTools: ["str_replace_editor"],
 		fallbackMode: LEGACY_FALLBACK_MODE,
 	});
+	await refreshToolpackages();
 	ctx.skills.registerProvider(() =>
 		defineFilesystemSkillProvider([join(CWD, "skills"), join(homedir(), ".dsh-mini", "skills")]),
 	);
@@ -643,7 +690,7 @@ const boot = async (ctx) => {
 		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"}) · mode ${currentMode}`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /sessions  /stats  /exit");
+		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /sessions  /tools [reload]  /stats  /exit");
 		console.log("");
 	}
 
@@ -691,6 +738,13 @@ const boot = async (ctx) => {
 				agent = makeAgent(currentModel, currentProvider);
 				if (ui) ui.setStatus(statusLine());
 				else console.log(`(new session: ${agent.session.id})`);
+				return;
+			}
+			if (trimmed === "/tools" || trimmed === "/tools reload") {
+				const result = trimmed === "/tools reload" ? await refreshToolpackages() : undefined;
+				const row = toolpackagesStatus(result);
+				if (ui) ui.addToolResult(row, false);
+				else console.log(row);
 				return;
 			}
 			if (trimmed === "/stats") {
