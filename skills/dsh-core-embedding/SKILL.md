@@ -313,13 +313,16 @@ byte-for-byte. Rules:
 
 ## Vendor patch delivery (deterministic builds)
 
-- Vendor cosmetic patches (accent blue, todo cap) must be applied by the
-  BUILD (patches/apply-dsh-tui-patches.py, wired into cli-build.sh) against
-  whichever copy esbuild bundles — local vendor/ or CI's npm install.
-  Patching only the local vendor copy silently diverges CI artifacts from
-  releases. Detection is marker-based, idempotent.
-- Patch policy: cosmetic, config-less presentation changes ONLY — never
-  logic (skill rule).
+- Vendor patches (accent blue, todo cap, clarify typing) must be applied by
+  the BUILD (patches/apply-dsh-tui-patches.py, wired into cli-build.sh)
+  against whichever copy esbuild bundles — local vendor/ or CI's npm
+  install. Patching only the local vendor copy silently diverges CI
+  artifacts from releases. Detection is marker-based, idempotent.
+- Patch policy: presentation and input-ergonomics changes ONLY — never
+  semantic/protocol changes (skill rule). Input may be re-routed to an
+  existing interaction path (e.g. typing a printable char enters the
+  question picker's existing custom-answer mode — same done() payload as
+  Tab), but the TUI's outputs and behavior must stay unchanged.
 
 ## cc-tui palette patch (vendor override policy)
 

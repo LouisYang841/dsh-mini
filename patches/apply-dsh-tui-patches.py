@@ -5,8 +5,10 @@
 # to whichever copy esbuild will bundle (local vendor/ or npm node_modules),
 # so CI artifacts match local releases byte-for-byte.
 #
-# Patch policy (see skills/dsh-core-embedding SKILL.md): cosmetic,
-# config-less presentation changes ONLY — never logic changes.
+# Patch policy (see skills/dsh-core-embedding SKILL.md): presentation and
+# input-ergonomics changes ONLY — never semantic/protocol changes. Patches
+# may re-route input to an existing interaction path (same outputs), but
+# must not alter what the TUI sends back or how it behaves otherwise.
 import sys
 
 ACCENT_OLD = '''			accent: {
@@ -46,6 +48,31 @@ TODO_TAIL_NEW = '''			lines.push(truncateToWidth(`  ${prefix} ${text}`, width, "
 	}
 };'''
 
+CLARIFY_OLD = '''		} else if (matchesKey(data, Key.space) && this.question.multiSelect) {
+			if (this.selected.has(this.selectedIndex)) this.selected.delete(this.selectedIndex);
+			else this.selected.add(this.selectedIndex);
+		} else if (matchesKey(data, Key.enter)) {'''
+CLARIFY_NEW = '''		} else if (matchesKey(data, Key.space) && this.question.multiSelect) {
+			if (this.selected.has(this.selectedIndex)) this.selected.delete(this.selectedIndex);
+			else this.selected.add(this.selectedIndex);
+		} else if (typeof data === "string" && data.length === 1 && data >= " " && data !== " " && data !== "\\x7f") {
+			// dsh-mini patch: typing any printable character switches straight
+			// into the custom-answer input (Tab still toggles it manually).
+			// Same done() payload as the Tab path — input ergonomics only.
+			this.mode = "custom";
+			this.selectedBlockPage = {
+				offset: 0,
+				size: 1,
+				maxOffset: 0
+			};
+			this.error = "";
+			this.input.handleInput(data);
+		} else if (matchesKey(data, Key.enter)) {'''
+CLARIFY_HINT_OLD = '''				"Tab custom answer",'''
+CLARIFY_HINT_NEW = '''				"Type or Tab: custom answer",'''
+CLARIFY_ERROR_OLD = '''				this.error = "Select at least one option, or press Tab for a custom answer.";'''
+CLARIFY_ERROR_NEW = '''				this.error = "Select at least one option, press Tab, or just type your answer.";'''
+
 
 def apply(path):
 	with open(path, encoding="utf-8") as f:
@@ -64,6 +91,16 @@ def apply(path):
 			changed.append("todo-cap-3")
 	else:
 		changed.append("todo-cap-3 (already)")
+	if "dsh-mini patch: typing any printable character" not in src:
+		if CLARIFY_OLD in src:
+			src = src.replace(CLARIFY_OLD, CLARIFY_NEW)
+			src = src.replace(CLARIFY_HINT_OLD, CLARIFY_HINT_NEW)
+			src = src.replace(CLARIFY_ERROR_OLD, CLARIFY_ERROR_NEW)
+			changed.append("clarify-type-custom")
+		else:
+			changed.append("clarify-type-custom (anchor missing)")
+	else:
+		changed.append("clarify-type-custom (already)")
 	if changed:
 		with open(path, "w", encoding="utf-8") as f:
 			f.write(src)
