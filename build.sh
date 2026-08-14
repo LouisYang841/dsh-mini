@@ -7,11 +7,20 @@
 set -e
 cd "$(dirname "$0")"
 
-# Resolve the DSH package tree through a symlink (esbuild walks up from the
-# importer, so it must find node_modules next to the entry).
-[ -e node_modules ] || ln -s /home/ubuntu/dsh/node_modules node_modules
+# Resolve the DSH package tree: CI/Termux install via npm into node_modules;
+# local dev symlinks to the DSH checkout (DSH_NODE_MODULES overrides).
+[ -e node_modules ] || ln -s "${DSH_NODE_MODULES:-/home/ubuntu/dsh/node_modules}" node_modules
 
-/home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild main.js \
+# esbuild resolution: env override > npx (CI/Termux: the android-arm64 package
+# comes in via esbuild's optionalDependencies) > dev-machine binary.
+ESBUILD="${ESBUILD:-}"
+if [ -z "$ESBUILD" ]; then
+  if command -v npx >/dev/null 2>&1; then ESBUILD="npx --yes esbuild"
+  elif [ -x /home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild ]; then ESBUILD="/home/ubuntu/Dsh_workspace/spike-tools/node_modules/@esbuild/linux-arm64/bin/esbuild"
+  else echo "esbuild not found: install it or set ESBUILD"; exit 1; fi
+fi
+
+$ESBUILD main.js \
   --bundle \
   --format=esm \
   --platform=neutral \
