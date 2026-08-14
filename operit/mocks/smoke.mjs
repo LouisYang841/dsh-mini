@@ -137,6 +137,13 @@ console.log("[A3] persisted events:", persisted.length, "todo/write in log:", pe
 if (persistedTodo < 1) throw new Error("A3: persisted log missing the todo/write event");
 console.log("[A3] PASS: session events persist to JSONL (no zstd)");
 
+// ---- Scenario C: on-device self-test (testConnection path) ----
+const { selfTest } = require(smokeCjs);
+const selfResult = await selfTest({ apiKey: "fake-key-000000", modelName: "fake-1" });
+console.log("[C] self-test:", JSON.stringify(selfResult));
+if (!selfResult.ok || selfResult.todoWrites !== 1) throw new Error("C: self-test failed");
+console.log("[C] PASS: selfTest boots a throwaway engine and dispatches the todo tool");
+
 // ---- Scenario B: live DeepSeek turn (no tools needed) ----
 const key = process.env.DEEPSEEK_API_KEY;
 if (!key) {

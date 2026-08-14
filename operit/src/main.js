@@ -8,7 +8,7 @@
 // Verified on Node via mocks/ (same file, fake globals) before touching
 // a device: mocks/smoke.mjs drives full turns against the real API.
 
-import { bootDsh, isBooted, currentEngine } from "./engine.js";
+import { bootDsh, isBooted, currentEngine, selfTest } from "./engine.js";
 import { driveTurn } from "./turn.js";
 import { loadSessionEvents, sessionLogPath } from "./store.js";
 
@@ -65,15 +65,10 @@ async function testConnection(event) {
 	const payload = event?.eventPayload ?? {};
 	const config = resolveConfig(payload?.config);
 	if (!config.apiKey) return { success: false, message: "API Key 不能为空" };
-	try {
-		const engine = await bootDsh(config);
-		return {
-			success: isBooted(),
-			message: engine ? "DSH engine booted" : "DSH engine not booted",
-		};
-	} catch (error) {
-		return { success: false, message: norm(error?.message || error) };
-	}
+	// On-device self-test: boots a throwaway engine and runs a full scripted
+	// turn — proves the brain is alive on this runtime without an API call.
+	const result = await selfTest(config);
+	return { success: result.ok, message: result.message };
 }
 
 function calculateInputTokens(event) {
@@ -96,4 +91,4 @@ export function registerToolPkg() {
 	return true;
 }
 
-export { sendMessage, bootDsh, driveTurn, currentEngine, loadSessionEvents, sessionLogPath };
+export { sendMessage, bootDsh, driveTurn, currentEngine, selfTest, loadSessionEvents, sessionLogPath };
