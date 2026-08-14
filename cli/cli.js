@@ -328,9 +328,12 @@ const boot = async (ctx) => {
 		}
 		const scanned = scanToolpackages(TOOL_ROOTS);
 		const registered = registerToolpackages(ctx, scanned.definitions);
-		toolpackages = registered;
+		// Keep scan-time manifest errors alongside registration errors so a
+		// later `/tools` (without reload) still reports them.
+		const errors = [...scanned.errors, ...registered.errors];
+		toolpackages = { disposers: registered.disposers, errors };
 		return {
-			errors: [...scanned.errors, ...registered.errors],
+			errors,
 			count: registered.disposers.length,
 			roots: TOOL_ROOTS,
 		};
