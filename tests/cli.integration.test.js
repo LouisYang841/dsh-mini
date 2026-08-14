@@ -1,16 +1,15 @@
 // CLI 集成测试：spawn 构建后的 cli.mjs（DSH_PLAIN=1 管道模式）。
-// 无 key 可跑的路径（--sessions）始终执行；需要真实 API key 的用例
-// （完整会话/管道吞行/close 语义）在 CI 无 key 环境下自动 skip。
+// 用 DSH_FAKE_LLM=1 的脚本化 adapter（无网络、无 key）跑完整会话，
+// 覆盖 SKILL.md 记录的三个 CLI 层坑：管道吞行、退出 flush、裸命令 fall-through。
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "cli", "cli.mjs");
-const HAS_KEY = Boolean(process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY);
 
 function runCli(args, input, env = {}) {
 	return new Promise((resolve) => {
@@ -32,6 +31,14 @@ function runCli(args, input, env = {}) {
 	});
 }
 
+const FAKE = (sessionsDir) => ({
+	DSH_FAKE_LLM: "1",
+	DSH_PROVIDER: "fake",
+	DSH_SESSIONS: sessionsDir,
+});
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 test("--sessions 无会话时正常退出 0（CLI boot 冒烟）", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "dsh-sess-test-"));
 	const r = await runCli(["--sessions"], "", { DSH_SESSIONS: dir });
@@ -39,37 +46,42 @@ test("--sessions 无会话时正常退出 0（CLI boot 冒烟）", async () => {
 	assert.equal(r.code, 0, `stderr: ${r.err.slice(0, 500)}`);
 });
 
-test("管道 EOF 后进程优雅退出（不僵死）", async () => {
-	const r = await runCli(["--sessions"], "", {});
-	assert.ok(r.code === 0 || r.code === 1, `exit=${r.code}`);
+test("管道连续输入全部被消费，不吞行（SKILL.md 管道吞行坑）", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "dsh-pipe-test-"));
+	// 两行输入各触发一次 turn；fake LLM 每次回 "(default reply)"。
+	// 吞行 bug 会导致回复次数 < 2。
+	const r = await runCli([], "hello\nworld\n/exit\n", FAKE(dir));
+	const replies = (r.out.match(/\(default reply\)/g) || []).length;
+	rmSync(dir, { recursive: true, force: true });
+	assert.ok(
+		replies >= 2,
+		`期望至少 2 次回复（两行都被消费），实际 ${replies}。输出: ${r.out.slice(0, 400)}`,
+	);
 });
 
-test(
-	"完整会话：管道连续输入被消费（SKILL.md 管道吞行坑）",
-	{ skip: !HAS_KEY },
-	async () => {
-		const r = await runCli([], "hello\n/stats\nexit\n", {});
-		// 弱断言：进程退出且输出里有会话痕迹；不依赖具体文案。
-		assert.ok(r.out.length > 0 || r.err.length > 0);
-	},
-);
+test("/stats 后退出前 flush 写盘，200ms 批窗不丢（SKILL.md L304 坑）", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "dsh-flush-test-"));
+	// 先有一次对话（产生会话事件），再 /stats + /exit——纯命令会话无事件可写，
+	// 无法验证 flush。退出时 gracefulExit 必须 await flush 完成再 exit。
+	const r = await runCli([], "hello\n/stats\n/exit\n", FAKE(dir));
+	// 等待写批窗口（200ms）落盘
+	await sleep(1000);
+	const files = readdirSync(dir, { recursive: true }).map(String);
+	rmSync(dir, { recursive: true, force: true });
+	assert.ok(
+		files.some((f) => f.includes("session")),
+		`会话文件应已写入。实际文件: ${files.slice(0, 6).join(", ") || "(空)"}`,
+	);
+});
 
-test(
-	"完整会话：/stats + 退出前 flush（200ms 写批不丢，SKILL.md L304 坑）",
-	{ skip: !HAS_KEY },
-	async () => {
-		const r = await runCli([], "/stats\nexit\n", {});
-		assert.ok(r.out.length > 0 || r.err.length > 0);
-	},
-);
-
-test(
-	"裸 /provider 被命令处理器拦截，不 fall-through 给模型（SKILL.md L270 坑）",
-	{ skip: !HAS_KEY },
-	async () => {
-		const r = await runCli([], "/provider\nexit\n", {});
-		// 无论输出什么，都不应出现"agent 用 bash 探索仓库"的行为痕迹；
-		// 这里是进程正常退出的弱断言 + 超时即失败（SIGKILL 会返回非 0/137）。
-		assert.ok(r.code === 0 || r.code === 1, `exit=${r.code}`);
-	},
-);
+test("裸 /provider 被命令处理器拦截，不 fall-through 给模型（SKILL.md L270 坑）", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "dsh-cmd-test-"));
+	const r = await runCli([], "/provider\n/exit\n", FAKE(dir));
+	rmSync(dir, { recursive: true, force: true });
+	// 若 fall-through，/provider 会作为 prompt 发给模型 → 输出含 fake 回复。
+	// 断言模型未被调用 = 命令被拦截。
+	assert.ok(
+		!r.out.includes("(default reply)"),
+		`裸 /provider 不应触发模型调用。输出: ${r.out.slice(0, 400)}`,
+	);
+});

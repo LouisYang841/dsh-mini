@@ -2,6 +2,7 @@
 // pi's shell (the real @earendil-works/pi-tui framework) + DSH's engine AND
 // state (AgentLoop, ToolRuntime, event-sourced sessions, JSONL persistence).
 import "../polyfills.js";
+import { FakeLlm } from "../fake-llm.js";
 import { parseArgs } from "./args.js";
 import { loadEnvFiles, persistCredential } from "./env.js";
 import { Context } from "@deepseek-ai/cordis";
@@ -10,7 +11,7 @@ import { SessionStore } from "@deepseek-ai/dsh-session";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
-import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { LlmRuntime, LlmAdapter, createUserMessage } from "@deepseek-ai/dsh-llm";
 import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as persistenceJsonl from "@deepseek-ai/dsh-session-persistence-jsonl";
@@ -115,9 +116,45 @@ function persistKey(provider, key) {
 
 const AGENTS_MD_CAP = 30 * 1024; // keep injected instructions bounded
 
+// Fake scripted adapter for tests/demos (DSH_FAKE_LLM=1 + DSH_PROVIDER=fake):
+// same stream contract as the conformance fake, but a full LlmAdapter so it
+// can be registered alongside the real LlmRuntime. No network, no key.
+class FakeAdapter extends LlmAdapter {
+	providerInfo(provider) {
+		return { id: provider, name: "Fake (scripted)" };
+	}
+	// LlmRuntime adapter contract: stream is a method on the adapter that
+	// returns an async iterable of harness-vocabulary chunks.
+	stream() {
+		const chunks = [
+			{ type: "block-start", index: 0, blockType: "text" },
+			{ type: "text-delta", index: 0, text: "(default reply)" },
+			{ type: "block-end", index: 0, block: { type: "text", text: "(default reply)" } },
+			{ type: "finish", reason: { kind: "stop" } },
+		];
+		let i = 0;
+		// Manual async iterator (no async generators: keeps the CLI bundle
+		// portable without relying on generator lowering).
+		return {
+			[Symbol.asyncIterator]() {
+				return {
+					async next() {
+						if (i < chunks.length) return { value: chunks[i++], done: false };
+						return { done: true };
+					},
+				};
+			},
+		};
+	}
+	prepareCall(config) {
+		return { config, stream: (request) => this.stream(request) };
+	}
+}
+
 const boot = async (ctx) => {
 	if (TTY && !process.env.DSH_NO_BANNER) process.stdout.write(renderBanner());
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
+	if (process.env.DSH_FAKE_LLM) ctx.llm.registerAdapter(["fake"], new FakeAdapter());
 	// /new: available in every renderer. In the community TUI it restarts the
 	// process with a fresh session id; plain mode handles it in handleLine.
 	ctx.commands.register({
@@ -219,11 +256,13 @@ const boot = async (ctx) => {
 			}
 		});
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
-		// turn that is still streaming.
+		// turn that is still streaming, nor drop lines still queued from a
+		// chunk that arrived before the REPL was armed (piped stdin delivers
+		// whole chunks at once; boot takes hundreds of ms to mount).
 		plainRl.on("close", () => {
 			if (!plainInputActive) return;
 			stdinClosed = true;
-			if (!busy) gracefulExit();
+			if (!busy && lineQueue.length === 0) gracefulExit();
 		});
 	}
 	const askUser = (question) => {
@@ -236,7 +275,7 @@ const boot = async (ctx) => {
 
 	let currentProvider = PROVIDER;
 	let currentModel = MODEL;
-	if (!process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv]) {
+	if (!process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv] && !process.env.DSH_FAKE_LLM) {
 		const hasAnyKey = Object.values(PROVIDER_DEFAULTS).some((def) => process.env[def.keyEnv]);
 		if (hasAnyKey) {
 			console.error(`[warn] ${PROVIDER_DEFAULTS[currentProvider].keyEnv} is not set: ${currentProvider} calls will fail with MISSING_CREDENTIAL`);
@@ -362,13 +401,17 @@ const boot = async (ctx) => {
 
 	// Exit with a persistence flush grace: the JSONL backend writes in
 	// 200ms batches; an immediate process.exit() kills the pending write.
-	const gracefulExit = () => {
+	// Await the flush itself (async) instead of guessing a fixed delay.
+	const gracefulExit = async () => {
 		try {
-			if (agent) ctx.emit("session/flush", agent.session);
+			if (agent) {
+				ctx.emit("session/flush", agent.session);
+				await ctx.sessionPersistence.flush(agent.session);
+			}
 		} catch {
 			// flush is best-effort on the way out
 		}
-		setTimeout(() => process.exit(0), 500);
+		setTimeout(() => process.exit(0), 100);
 	};
 
 	async function handleLine(line) {
@@ -376,6 +419,7 @@ const boot = async (ctx) => {
 		try {
 			if (/^(\/)?(exit|quit|e|q)(\(\))?$/i.test(trimmed)) {
 				gracefulExit();
+				return;
 			}
 			if (trimmed === "") return;
 			if (trimmed === "/provider") {
@@ -584,6 +628,11 @@ const boot = async (ctx) => {
 	if (!ui) {
 		const ask = async () => {
 			for (;;) {
+				// EOF + drained queue: nothing left to process, exit cleanly.
+				if (stdinClosed && lineQueue.length === 0) {
+					gracefulExit();
+					return;
+				}
 				const line = await askUser("you> ");
 				await handleLine(line);
 				process.stdout.write("\n");
