@@ -40,6 +40,7 @@ import { defineBashTool, bashGuidanceSection } from "./bash-tool.js";
 import * as readline from "node:readline";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { zstdCompress } from "node:zlib";
 import { homedir } from "node:os";
@@ -127,8 +128,31 @@ const AGENTS_MD_CAP = 30 * 1024; // keep injected instructions bounded
 
 const boot = async (ctx) => {
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
+	// /new: available in every renderer. In the community TUI it restarts the
+	// process with a fresh session id; plain mode handles it in handleLine.
+	ctx.commands.register({
+		name: "new",
+		description: "Start a fresh session (restarts with a new session id)",
+		handler: async (invocation) => {
+			try {
+				ctx.emit("session/flush", invocation.agent.session);
+			} catch {
+				// best-effort flush before restart
+			}
+			spawn(process.execPath, [process.argv[1]], {
+				detached: true,
+				stdio: "inherit",
+				env: { ...process.env, DSH_FRESH: "1" },
+			}).unref();
+			setTimeout(() => process.exit(0), 300);
+			return { kind: "success", text: "starting a fresh session" };
+		},
+	});
 	if (process.env.DSH_DEBUG) {
 		console.error("[debug] registered adapters:", [...ctx.llm.adapters.keys()].join(","));
+		setTimeout(() => {
+			if (agent) console.error("[debug] commands:", ctx.commands.list(agent).map((c) => c.name).join(","));
+		}, 2000);
 	}
 	ctx.tools.register(defineBashTool());
 	ctx.systemPrompt.section(bashGuidanceSection());
@@ -248,7 +272,7 @@ const boot = async (ctx) => {
 			plainRl.close();
 			plainRl = null;
 		}
-		const tuiSessionId = RESUME_ID ?? "main";
+		const tuiSessionId = RESUME_ID ?? (process.env.DSH_FRESH ? `main-${Date.now().toString(36)}` : "main");
 		ctx.plugin(ccTuiNs, { sessionId: tuiSessionId }).then(
 			() => {},
 			(err) => {
@@ -303,7 +327,7 @@ const boot = async (ctx) => {
 		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"})`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-		console.log("commands: /clear  /model [id]  /provider [id]  /sessions  /stats  /exit");
+		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /sessions  /stats  /exit");
 		console.log("");
 	}
 
@@ -349,7 +373,7 @@ const boot = async (ctx) => {
 				}
 				return;
 			}
-			if (trimmed === "/clear") {
+			if (trimmed === "/clear" || trimmed === "/new") {
 				agent.cancel({ kind: "user-clear" });
 				agent = makeAgent(currentModel, currentProvider);
 				if (ui) ui.setStatus(statusLine());
@@ -381,6 +405,40 @@ const boot = async (ctx) => {
 				const row = `turns=${turns} messages=${userMsgs}/${assistantMsgs} tools=${toolCalls} tokens=\u2191${inTok} \u2193${outTok} (cached ${cachedTok})`;
 				if (ui) ui.addToolResult(row, false);
 				else console.log(row);
+				return;
+			}
+			if (trimmed === "/resume") {
+				const headers = await ctx.sessionPersistence.list();
+				for (const header of headers) {
+					const row = `${header.id}\t${header.cwd ?? ""}\t${header.createdAt ?? ""}\t${header.eventCount ?? ""}`;
+					if (ui) ui.addToolResult(row, false);
+					else console.log(row);
+				}
+				const hint = "usage: /resume <id>";
+				if (ui) ui.addToolResult(hint, false);
+				else console.log(hint);
+				return;
+			}
+			if (trimmed.startsWith("/resume ")) {
+				const id = trimmed.slice(8).trim();
+				if (!id) return;
+				try {
+					agent.cancel({ kind: "user-resume" });
+					const published = await Promise.race([
+						ctx.agentLoop.resume(ctx, {
+							resumeSessionId: id,
+							agentOptions: { provider: currentProvider, model: currentModel },
+						}),
+						new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
+					]);
+					agent = published.agent;
+					if (ui) ui.setStatus(statusLine());
+					else console.log(`(resumed ${id})`);
+				} catch (err) {
+					const row = `[resume] FAILED: ${err?.message ?? String(err)}`;
+					if (ui) ui.addError(row);
+					else console.error(row);
+				}
 				return;
 			}
 			if (trimmed === "/sessions") {
@@ -498,7 +556,7 @@ const boot = async (ctx) => {
 		void ask();
 	}
 };
-boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence", "skills"];
+boot.inject = ["agents", "sessions", "llm", "tools", "systemPrompt", "agentLoop", "sessionPersistence", "skills", "commands"];
 
 const root = new Context();
 const mount = (label, plugin, config) => {
