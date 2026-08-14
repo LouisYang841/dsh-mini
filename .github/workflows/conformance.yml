@@ -20,3 +20,5 @@ jobs:
         run: bash run.sh
       - name: Build CLI
         run: bash cli/cli-build.sh
+      - name: Run CLI tests (unit + integration)
+        run: node --test "tests/*.test.js"

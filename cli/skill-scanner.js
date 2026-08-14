@@ -8,7 +8,7 @@ import { join, basename } from "node:path";
 
 const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function parseFrontmatter(text) {
+export function parseFrontmatter(text) {
 	const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
 	if (!match) return { meta: {}, body: text };
 	const meta = {};
@@ -19,7 +19,7 @@ function parseFrontmatter(text) {
 	return { meta, body: match[2] };
 }
 
-function discover(roots) {
+export function discover(roots) {
 	const found = new Map();
 	for (const root of roots) {
 		if (!existsSync(root)) continue;
