@@ -544,6 +544,7 @@ const boot = async (ctx) => {
 	let lineQueue = [];
 	let lineResolver = null;
 	let lineReject = null;
+	let setupInputActive = false;
 	const queueLine = (line) => {
 		if (lineResolver) {
 			const resolve = lineResolver;
@@ -561,7 +562,7 @@ const boot = async (ctx) => {
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
 		// turn that is still streaming.
 		plainRl.on("close", () => {
-			if (lineResolver) {
+			if (lineResolver && setupInputActive) {
 				const reject = lineReject;
 				lineResolver = null;
 				lineReject = null;
@@ -596,6 +597,7 @@ const boot = async (ctx) => {
 			console.error(`[warn] ${PROVIDER_DEFAULTS[currentProvider].keyEnv} is not set: ${currentProvider} calls will fail with MISSING_CREDENTIAL`);
 		} else {
 			// First run: no keys anywhere — interactive provider + key setup.
+			setupInputActive = true;
 			console.log("No API key detected. Configure a provider:");
 			const answer = (await askUser(`provider (${Object.keys(PROVIDER_DEFAULTS).join("/")}) [deepseek-official]: `)).trim() || "deepseek-official";
 			if (!PROVIDER_DEFAULTS[answer]) {
@@ -612,6 +614,7 @@ const boot = async (ctx) => {
 			process.env[PROVIDER_DEFAULTS[answer].keyEnv] = key;
 			persistCredential(answer, key);
 		}
+		setupInputActive = false;
 	}
 	// pi-ai routes are key-gated and must be built AFTER the env loader and
 	// interactive setup have populated process.env; mounting this at module
