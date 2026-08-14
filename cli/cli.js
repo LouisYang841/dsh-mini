@@ -20,6 +20,9 @@ import * as toolAskUserNs from "@deepseek-ai/dsh-tool-ask-user";
 import * as piAiNs from "@deepseek-ai/dsh-llm-pi-ai";
 import * as toolSkillNs from "@deepseek-ai/dsh-tool-skill";
 import { defineFilesystemSkillProvider } from "./skill-scanner.js";
+import * as compactionNs from "@deepseek-ai/dsh-compaction-basic";
+import * as sessionTitleNs from "@deepseek-ai/dsh-session-title";
+import * as sessionTitleLlmNs from "@deepseek-ai/dsh-session-title-first-prompt-llm";
 import * as ccTuiNs from "@openguardrails/dsh-tui";
 import * as ccTuiPromptNs from "@openguardrails/dsh-tui/prompt";
 import * as skillNs from "@deepseek-ai/dsh-skill";
@@ -506,6 +509,14 @@ mount("storage-json", storageJsonNs);
 mount("storage-domain", storageDomainNs);
 mount("tui-prompt", ccTuiPromptNs.TuiPromptService);
 mount("tool-skill", toolSkillNs);
+mount("compaction", compactionNs.BasicCompactionEngine, {
+	auto: true,
+	thresholdRatio: Number(process.env.DSH_COMPACT_RATIO ?? 0.8),
+});
+if (process.env.DSH_TITLES) {
+	mount("session-title", sessionTitleNs.SessionTitleService);
+	mount("session-title-llm", sessionTitleLlmNs);
+}
 mount("fs", LocalFileSystem, { cwd: CWD });
 mount("persistence", persistenceJsonl.JsonlSessionPersistence, { root: SESSIONS_DIR, ...(HAS_ZSTD ? {} : { compression: "none" }) });
 mount("tool-fs", fsTools);

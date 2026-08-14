@@ -237,6 +237,21 @@ byte-for-byte. Rules:
 - Skill roots: `<cwd>/skills` + `~/.dsh-mini/skills`; `<name>/SKILL.md` or
   `<name>.md`.
 
+## Compaction + titles findings
+
+- `dsh-compaction-basic` REQUIRES the real `LlmRuntime` (it calls
+  `ctx.llm.resolveModelInfo`); a hand-rolled llm SERVICE misses the method
+  and the hook swallows the TypeError (ctx.logger.warn). Context capacity
+  comes from the ADAPTER's `resolveModel` (`context.contextWindow`), not from
+  `prepareCall`.
+- Auto compaction triggers between steps when the meter's totalTokens
+  exceeds thresholdRatio × contextWindow; the surface range selector needs
+  balanced boundaries, so tiny single-turn replay surfaces silently select
+  nothing (`range === null` → return). Test with multi-turn histories.
+- Session titles = `dsh-session-title` (service) + the first-prompt LLM
+  provider, gated behind `DSH_TITLES=1` — each new session costs one silent
+  model call; never default-on for free-tier keys.
+
 ## Distribution hygiene
 
 - **Zero runtime npm deps**: every @deepseek-ai/@earendil-works package is

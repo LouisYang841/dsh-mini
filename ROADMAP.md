@@ -47,9 +47,15 @@ provider SDKs (the portable engine bundle is unaffected at 419KB).
   `dsh-skill-filesystem`'s chokidar + yaml). Roots: `<cwd>/skills` +
   `~/.dsh-mini/skills`; replay-verified load of the embedded
   `dsh-core-embedding` skill.
-- **Compaction**: `dsh-compaction` + `dsh-compaction-basic` + `dsh-token-meter`
-  (all pure; trigger wiring is the open question). MEDIUM — defer until
-  sessions actually exceed context; /stats already exposes the pressure.
+- [x] **Compaction**: `dsh-compaction-basic` (bundles the abstract core) +
+  `dsh-token-meter`, both pure. Triggers via `agent/pre-step` pressure checks
+  (0.8 × adapter contextWindow, tunable with `DSH_COMPACT_RATIO`) and
+  context-overflow recovery. Live triggering is hard to smoke-test without a
+  huge session; the replay harness has a pending TODO (the range selector
+  needs a multi-turn surface with balanced boundaries).
+- [x] **Session titles**: `dsh-session-title` + `dsh-session-title-first-
+  prompt-llm` (pure) mounted behind `DSH_TITLES=1` (one silent LLM call per
+  session — opt-in by default).
 - **Session titles**: `dsh-session-title-first-prompt-llm` (LLM titles for
   `/sessions`). LOW.
 
