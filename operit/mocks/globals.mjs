@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 const execAsync = promisify(nodeExec);
 
 // File-tool backing store for the session log mock.
-const MOCK_ROOT = join(new URL("..", import.meta.url).pathname, ".mock-store");
+const MOCK_ROOT = join(new URL(".", import.meta.url).pathname, ".mock-store");
 export function mockResolvePath(path) {
 	return join(MOCK_ROOT, path.replace(/^\/+/, ""));
 }
