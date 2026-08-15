@@ -23,8 +23,8 @@ test('loadConfig merges user then project then env with strict validation', () =
   const dir = mkdtempSync(join(tmpdir(), 'dsh-mini-config-'))
   const userPath = join(dir, 'user.json')
   const projectPath = join(dir, 'project.json')
-  writeFileSync(userPath, JSON.stringify({ defaultMode: 'standard', titles: true, sessionsDir: '~/sessions' }))
-  writeFileSync(projectPath, JSON.stringify({ defaultMode: 'minimal', titles: false, compactionRatio: 0.5 }))
+  writeFileSync(userPath, JSON.stringify({ defaultMode: 'standard', titles: true, sessionsDir: '~/sessions', reasoningEffort: 'high' }))
+  writeFileSync(projectPath, JSON.stringify({ defaultMode: 'minimal', titles: false, compactionRatio: 0.5, reasoningEffort: 'max' }))
   const config = loadConfig({
     env: { DSH_COMPACT_RATIO: '0.25', DSH_TITLES: '0', DSH_SESSIONS: join(dir, 'env-sessions') },
     userPath,
@@ -34,9 +34,10 @@ test('loadConfig merges user then project then env with strict validation', () =
   assert.equal(config.compactionRatio, 0.25)
   assert.equal(config.titles, false)
   assert.equal(config.sessionsDir, join(dir, 'env-sessions'))
+  assert.equal(config.reasoningEffort, 'max')
   assert.deepEqual(config.raw, {
-    user: { defaultMode: 'standard', titles: true, sessionsDir: '~/sessions' },
-    project: { defaultMode: 'minimal', titles: false, compactionRatio: 0.5 },
+    user: { defaultMode: 'standard', titles: true, sessionsDir: '~/sessions', reasoningEffort: 'high' },
+    project: { defaultMode: 'minimal', titles: false, compactionRatio: 0.5, reasoningEffort: 'max' },
   })
   rmSync(dir, { recursive: true, force: true })
 })
@@ -73,10 +74,13 @@ test('saveUserConfig persists a patch with mode 0600 and preserves existing fiel
   saveUserConfig({ titles: true }, { path })
   assert.equal(JSON.parse(readFileSync(path, 'utf8')).titles, true)
   assert.equal(statSync(path).mode & 0o777, 0o600)
-  saveUserConfig({ defaultMode: 'standard' }, { path })
+  saveUserConfig({ defaultMode: 'standard', reasoningEffort: 'high' }, { path })
   const saved = JSON.parse(readFileSync(path, 'utf8'))
   assert.equal(saved.defaultMode, 'standard')
   assert.equal(saved.titles, true)
+  assert.equal(saved.reasoningEffort, 'high')
+  saveUserConfig({ reasoningEffort: undefined }, { path })
+  assert.equal('reasoningEffort' in JSON.parse(readFileSync(path, 'utf8')), false)
   rmSync(dir, { recursive: true, force: true })
 })
 

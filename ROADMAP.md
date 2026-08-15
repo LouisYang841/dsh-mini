@@ -25,10 +25,16 @@ chokidar/node-pty/landlock/ripgrep and write seam glue instead.
   default.
 - [x] **Persistent settings**: pi-style JSON config
   (`~/.dsh-mini/settings.json` user + `./.dsh-mini/settings.json` project,
-  env then CLI overrides) for mode/provider/model/sessions/compaction/titles/
-  AGENTS injection/banner/renderer. `/config` shows effective values and
-  saves changes; DSH official's YAML+chokidar watcher was intentionally not
-  ported (zero-runtime-dep rule).
+  env then CLI overrides) for mode/provider/model/reasoning/sessions/
+  compaction/titles/AGENTS injection/banner/renderer. `/config` shows
+  effective values and saves changes; DSH official's YAML+chokidar watcher
+  was intentionally not ported (zero-runtime-dep rule).
+- [x] **Reasoning effort control**: DSH's `installModelSelection` snapshots
+  the per-agent `reasoningEffort` during prompt assembly and applies it to
+  the next request. `/reasoning` lists the exact model's adapter-advertised
+  efforts (DeepSeek: `off`/`high`/`max`), `/reasoning <id> [--global]`
+  switches/persists, `reasoningEffort`/`DSH_REASONING_EFFORT`/
+  `--reasoning-effort` configure the default.
 - [x] **Plan-mode mount fixed**: `exit_plan_mode` is now actually registered
   (the plan-mode plugin requires its `section` config).
 - [x] **Out-of-process toolpackages**: `<cwd>/tools` + `~/.dsh-mini/tools`

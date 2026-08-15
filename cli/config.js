@@ -25,6 +25,7 @@ export const CONFIG_DEFAULTS = Object.freeze({
   defaultMode: 'minimal',
   defaultProvider: undefined,
   defaultModel: undefined,
+  reasoningEffort: undefined,
   sessionsDir: join(homedir(), '.dsh-mini', 'sessions'),
   compactionRatio: 0.8,
   titles: false,
@@ -37,7 +38,7 @@ export const RENDERER_VALUES = Object.freeze(['auto', 'cc', 'basic', 'plain'])
 
 const BOOLEAN_FIELDS = new Set(['titles', 'workspaceInstructions', 'showBanner'])
 const NUMBER_FIELDS = new Set(['compactionRatio'])
-const STRING_FIELDS = new Set(['defaultMode', 'defaultProvider', 'defaultModel', 'sessionsDir', 'renderer'])
+const STRING_FIELDS = new Set(['defaultMode', 'defaultProvider', 'defaultModel', 'reasoningEffort', 'sessionsDir', 'renderer'])
 
 function normalize(raw, source) {
   if (raw === undefined) return {}
@@ -95,6 +96,7 @@ export function loadConfig(options = {}) {
     defaultMode: env.DSH_MODE ?? merged.defaultMode,
     defaultProvider: env.DSH_PROVIDER ?? merged.defaultProvider,
     defaultModel: env.DSH_MODEL ?? merged.defaultModel,
+    reasoningEffort: env.DSH_REASONING_EFFORT === undefined || env.DSH_REASONING_EFFORT === '' ? merged.reasoningEffort : env.DSH_REASONING_EFFORT,
     sessionsDir: env.DSH_SESSIONS ?? expandPath(merged.sessionsDir),
     compactionRatio: env.DSH_COMPACT_RATIO === undefined ? merged.compactionRatio : Number(env.DSH_COMPACT_RATIO),
     titles: env.DSH_TITLES === undefined ? merged.titles : env.DSH_TITLES !== '0',
@@ -120,8 +122,13 @@ export function expandPath(path) {
 export function saveUserConfig(patch, options = {}) {
   const path = options.path ?? USER_CONFIG_PATH
   const existing = normalize(readJson(path), path)
+  const merged = { ...existing }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete merged[key]
+    else merged[key] = value
+  }
   // normalize() also validates the patch before anything touches disk.
-  const next = normalize({ ...existing, ...patch }, path)
+  const next = normalize(merged, path)
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   // Same-directory temp + rename keeps an existing settings file intact if
   // the write or chmod fails halfway through.

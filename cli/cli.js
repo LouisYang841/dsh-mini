@@ -3,7 +3,7 @@
 // state (AgentLoop, ToolRuntime, event-sourced sessions, JSONL persistence).
 import "../polyfills.js";
 import { Context } from "@deepseek-ai/cordis";
-import { AgentRegistry } from "@deepseek-ai/dsh-agent";
+import { AgentRegistry, installModelSelection } from "@deepseek-ai/dsh-agent";
 import { SessionStore } from "@deepseek-ai/dsh-session";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -96,10 +96,10 @@ const RENDERER = process.env.DSH_PLAIN ? "plain" : process.env.DSH_TUI === "basi
 const TTY = RAW_TTY && RENDERER !== "plain";
 const USE_CC_TUI = TTY && RENDERER === "cc";
 
-// CLI args: node cli.mjs [model] [--provider <id>] [--mode <id>] [--resume <id>] [--sessions]
+// CLI args: node cli.mjs [model] [--provider <id>] [--mode <id>] [--reasoning-effort <id>] [--resume <id>] [--sessions]
 // Flags with values consume the following token so their value is not mistaken
 // for the positional model id (the same applies to --provider and --resume).
-const FLAG_VALUE_ARGS = new Set(["--provider", "--mode", "--resume"]);
+const FLAG_VALUE_ARGS = new Set(["--provider", "--mode", "--resume", "--reasoning-effort", "--reasoning"]);
 const ARGS = [];
 for (let argIndex = 2; argIndex < process.argv.length; argIndex += 1) {
 	const arg = process.argv[argIndex];
@@ -122,7 +122,9 @@ const RESUME_ID = flagValue("--resume");
 const PROVIDER_OVERRIDE = flagValue("--provider");
 const LIST_SESSIONS = process.argv.includes("--sessions");
 const MODE_OVERRIDE = flagValue("--mode");
+const REASONING_OVERRIDE = flagValue("--reasoning-effort") ?? flagValue("--reasoning");
 const MODE = MODE_OVERRIDE ?? CONFIG.defaultMode;
+const REASONING_EFFORT = REASONING_OVERRIDE ?? CONFIG.reasoningEffort;
 if (!isValidMode(MODE)) {
 	console.error(`unknown mode "${MODE}" (known: ${MODES.join(", ")}); use --mode <id>, DSH_MODE, or the defaultMode setting`);
 	process.exit(1);
@@ -278,6 +280,14 @@ function providerRestartArgs(provider) {
 			continue;
 		}
 		if (arg.startsWith("--resume=") || arg.startsWith("--mode=") || arg.startsWith("--provider=") || arg === "--sessions") continue;
+		if (FLAG_VALUE_ARGS.has(arg)) {
+			args.push(arg);
+			if (argv[index + 1] !== undefined && !argv[index + 1].startsWith("--")) {
+				args.push(argv[index + 1]);
+				index += 1;
+			}
+			continue;
+		}
 		if (!arg.startsWith("--")) continue; // positional model belongs to the old provider
 		args.push(arg);
 	}
@@ -287,11 +297,11 @@ function providerRestartArgs(provider) {
 
 /** Spawn a replacement dsh-mini process with caller-selected launch args.
  * Used by /new, /mode, and /provider in the community TUI. */
-function spawnConfiguredProcess(mode, args) {
+function spawnConfiguredProcess(mode, args, reasoning) {
 	const child = spawn(process.execPath, [process.argv[1], ...args], {
 		detached: true,
 		stdio: "inherit",
-		env: { ...process.env, DSH_FRESH: "1", DSH_MODE: mode },
+		env: { ...process.env, DSH_FRESH: "1", DSH_MODE: mode, DSH_REASONING_EFFORT: reasoning ?? "" },
 	});
 	child.unref();
 	return child;
@@ -313,12 +323,15 @@ const boot = async (ctx) => {
 	// mode a resumed legacy session happened to be in. Only an explicit
 	// /mode switch (with or without --global) changes it for the process.
 	let newSessionMode = MODE;
+	let currentReasoningEffort = REASONING_EFFORT;
 	let currentConfig = CONFIG;
+	const modelSelections = new Map();
 
 	const CONFIG_ENV_KEYS = {
 		defaultMode: "DSH_MODE",
 		defaultProvider: "DSH_PROVIDER",
 		defaultModel: "DSH_MODEL",
+		reasoningEffort: "DSH_REASONING_EFFORT",
 		sessionsDir: "DSH_SESSIONS",
 		compactionRatio: "DSH_COMPACT_RATIO",
 		titles: "DSH_TITLES",
@@ -330,6 +343,7 @@ const boot = async (ctx) => {
 		if (key === "defaultMode" && MODE_OVERRIDE !== undefined) return "cli";
 		if (key === "defaultProvider" && PROVIDER_OVERRIDE !== undefined) return "cli";
 		if (key === "defaultModel" && ARGS[0] !== undefined) return "cli";
+		if (key === "reasoningEffort" && REASONING_OVERRIDE !== undefined) return "cli";
 		if (key === "renderer" && (process.env.DSH_PLAIN || process.env.DSH_TUI === "basic")) return "env";
 		if (process.env[CONFIG_ENV_KEYS[key]] !== undefined) return "env";
 		if (key in currentConfig.raw.project) return "project";
@@ -348,12 +362,14 @@ const boot = async (ctx) => {
 		if (MODE_OVERRIDE !== undefined) next.defaultMode = MODE_OVERRIDE;
 		if (PROVIDER_OVERRIDE !== undefined) next.defaultProvider = PROVIDER_OVERRIDE;
 		if (ARGS[0] !== undefined) next.defaultModel = ARGS[0];
+		if (REASONING_OVERRIDE !== undefined) next.reasoningEffort = REASONING_OVERRIDE;
 		return { config: next };
 	};
 	const configSnapshot = () => ({
 		defaultMode: currentConfig.defaultMode,
 		defaultProvider: currentConfig.defaultProvider ?? "(auto)",
 		defaultModel: currentConfig.defaultModel ?? "(provider default)",
+		reasoningEffort: currentConfig.reasoningEffort ?? "(provider default)",
 		sessionsDir: currentConfig.sessionsDir,
 		compactionRatio: currentConfig.compactionRatio,
 		titles: currentConfig.titles,
@@ -376,17 +392,20 @@ const boot = async (ctx) => {
 		if (patch.compactionRatio !== undefined && (!Number.isFinite(patch.compactionRatio) || patch.compactionRatio <= 0 || patch.compactionRatio > 1)) throw new Error("compactionRatio must be > 0 and <= 1");
 		return patch;
 	};
-	const persistSetting = (key, value) => {
+	const persistSetting = async (key, value) => {
 		const patch = validateConfigPatch(coerceConfigPatch(key, value));
+		if (patch.reasoningEffort !== undefined) await validateReasoningEffort(patch.reasoningEffort);
 		const saved = saveUserConfig(patch);
 		const loaded = reloadConfig();
 		if (loaded.error) throw loaded.error;
 		currentConfig = loaded.config;
-		// A global defaultMode change takes effect for future /new sessions
+		// Global default changes take effect for future /new sessions
 		// immediately unless a CLI/env override owns the launch default.
 		const runtimeApplied = patch.defaultMode !== undefined && loaded.config.defaultMode === patch.defaultMode;
+		const reasoningApplied = patch.reasoningEffort !== undefined && loaded.config.reasoningEffort === patch.reasoningEffort;
 		if (runtimeApplied) newSessionMode = patch.defaultMode;
-		return { key, value: patch[key], path: saved.path, runtimeApplied };
+		if (reasoningApplied) currentReasoningEffort = patch.reasoningEffort;
+		return { key, value: patch[key], path: saved.path, runtimeApplied, reasoningApplied };
 	};
 	const handleConfigCommand = async (raw) => {
 		const args = raw.trim().split(/\s+/).filter(Boolean);
@@ -403,14 +422,50 @@ const boot = async (ctx) => {
 				? saved.runtimeApplied
 					? "future /new sessions use it now; use /mode <id> to switch this session"
 					: `saved, but the ${configSource(key)} value still overrides it for this process`
-				: staticKeys.has(key)
-					? "restart dsh-mini to apply"
-					: "restart dsh-mini to use it as the launch default";
+				: key === "reasoningEffort"
+					? saved.reasoningApplied
+						? "future /new sessions use it now; use /reasoning <id> to switch this session"
+						: `saved, but the ${configSource(key)} value still overrides it for this process`
+					: staticKeys.has(key)
+						? "restart dsh-mini to apply"
+						: "restart dsh-mini to use it as the launch default";
 			return { kind: "success", text: `saved ${key}=${String(saved.value)} to ${saved.path}\n${note}` };
 		} catch (error) {
 			return { kind: "error", text: `[config] ${error.message}` };
 		}
 	};
+	/**
+	 * Per-agent model selection, ported from DSH's api-proxy `selectionFor`:
+	 * an explicit in-process pick wins; otherwise a resumed session keeps the
+	 * reasoning effort logged in its request header (when the route still
+	 * matches); otherwise the configured launch default applies. The official
+	 * `installModelSelection` then snapshots it during prompt assembly and
+	 * applies it to the next request only.
+	 */
+	const installModelSelectionFor = (agent, provider, model, reasoning) => {
+		let picked;
+		const selection = {
+			get current() {
+				if (picked !== undefined) return picked;
+				const logged = agent.session.requestHeader()?.config;
+				const loggedReasoning = logged?.provider === provider && logged.model === model ? logged.reasoningEffort : void 0;
+				const effort = reasoning ?? loggedReasoning;
+				return {
+					provider,
+					model,
+					...effort === void 0 ? {} : { reasoningEffort: effort }
+				};
+			},
+			set current(next) {
+				picked = next;
+			},
+			assembled: void 0
+		};
+		installModelSelection(agent.ctx, selection);
+		modelSelections.set(agent, selection);
+		return selection;
+	};
+	const activeReasoningFor = (agent) => modelSelections.get(agent)?.current?.reasoningEffort;
 	const parseModeArgs = (raw) => {
 		const parts = raw.trim().split(/\s+/).filter(Boolean);
 		const mode = parts[0]?.startsWith("--") ? undefined : parts[0];
@@ -418,6 +473,14 @@ const boot = async (ctx) => {
 		if (mode === undefined && flags.length > 0) return { error: `/mode requires a mode id (use /mode <${MODES.join("|")}> [--global])` };
 		if (flags.some((flag) => flag !== "--global")) return { error: `unknown mode argument "${flags.find((flag) => flag !== "--global")}" (use --global)` };
 		return { mode, global: flags.includes("--global") };
+	};
+	const parseReasoningArgs = (raw) => {
+		const parts = raw.trim().split(/\s+/).filter(Boolean);
+		const effort = parts[0]?.startsWith("--") ? undefined : parts[0];
+		const flags = effort === undefined ? parts : parts.slice(1);
+		if (effort === undefined && flags.length > 0) return { error: "/reasoning requires an effort id (use /reasoning <id> [--global], or /reasoning to list)" };
+		if (flags.some((flag) => flag !== "--global")) return { error: `unknown reasoning argument "${flags.find((flag) => flag !== "--global")}" (use --global)` };
+		return { effort, global: flags.includes("--global") };
 	};
 
 	const formatStats = (events) => {
@@ -493,11 +556,11 @@ const boot = async (ctx) => {
 	 * the replacement starts — spawn+exit briefly leaves two raw-mode owners
 	 * racing over the same pty and leaks terminal-negotiation bytes into the
 	 * CLI. Without execve (some Windows hosts), fall back to spawn+exit. */
-	const restartProcess = async (args, mode) => {
+	const restartProcess = async (args, mode, reasoning = currentReasoningEffort) => {
 		const entry = process.argv[1];
 		const execve = process.execve?.bind(process);
 		if (entry === undefined || execve === undefined) {
-			spawnConfiguredProcess(mode, args);
+			spawnConfiguredProcess(mode, args, reasoning);
 			setTimeout(() => process.exit(0), 300);
 			return;
 		}
@@ -511,6 +574,7 @@ const boot = async (ctx) => {
 				...process.env,
 				DSH_FRESH: "1",
 				DSH_MODE: mode,
+				DSH_REASONING_EFFORT: reasoning ?? "",
 			});
 			throw new Error("process replacement returned unexpectedly");
 		} catch (error) {
@@ -538,7 +602,7 @@ const boot = async (ctx) => {
 		description: "Start a fresh session (restarts with a new session id)",
 		handler: async (invocation) => {
 			await flushSession(invocation.agent.session);
-			await restartProcess(restartArgs(), newSessionMode);
+			await restartProcess(restartArgs(), newSessionMode, currentReasoningEffort);
 			return { kind: "success", text: `starting a fresh session (${newSessionMode} mode)` };
 		},
 	});
@@ -580,7 +644,7 @@ const boot = async (ctx) => {
 			await flushSession(invocation.agent.session);
 			// A provider switch always mints a new session: use the configured
 			// default mode, not the mode of the session we are leaving.
-			await restartProcess(providerRestartArgs(next), newSessionMode);
+			await restartProcess(providerRestartArgs(next), newSessionMode, currentReasoningEffort);
 			return { kind: "success", text: `restarting with provider ${next}` };
 		},
 	});
@@ -589,6 +653,17 @@ const boot = async (ctx) => {
 		description: "Show settings, or save one to ~/.dsh-mini/settings.json",
 		input: { hint: "[key [value]]" },
 		handler: async (invocation) => handleConfigCommand((invocation.rawInput ?? "").trim()),
+	});
+	ctx.commands.register({
+		name: "reasoning",
+		description: "Show or switch the model reasoning effort (--global persists)",
+		input: { hint: "[effort [--global]]" },
+		handler: async (invocation) => {
+			const parsed = parseReasoningArgs((invocation.rawInput ?? "").trim());
+			if (parsed.error) return { kind: "error", text: parsed.error };
+			if (!parsed.effort) return { kind: "success", text: await reasoningCatalogText(invocation.agent) };
+			return applyReasoning(invocation.agent, parsed.effort, parsed.global);
+		},
 	});
 	ctx.commands.register({
 		name: "mode",
@@ -613,7 +688,7 @@ const boot = async (ctx) => {
 			// The community TUI owns its session id, so switching mode restarts
 			// the process with a fresh session, exactly like /new.
 			await flushSession(invocation.agent.session);
-			await restartProcess(restartArgs(), parsed.mode);
+			await restartProcess(restartArgs(), parsed.mode, currentReasoningEffort);
 			return { kind: "success", text: `restarting in ${parsed.mode} mode${parsed.global ? " (saved as global default)" : ""}` };
 		},
 	});
@@ -656,9 +731,10 @@ const boot = async (ctx) => {
 		process.exit(0);
 	}
 
-	const makeAgent = (model, provider = PROVIDER, id = `cli-${Date.now().toString(36)}`, mode = newSessionMode) => {
+	const makeAgent = (model, provider = PROVIDER, id = `cli-${Date.now().toString(36)}`, mode = newSessionMode, reasoning = currentReasoningEffort) => {
 		const created = ctx.agentLoop.create(id, { provider, model }, { cwd: CWD });
 		appendMode(created, mode);
+		installModelSelectionFor(created, provider, model, reasoning);
 		return created;
 	};
 
@@ -735,6 +811,62 @@ const boot = async (ctx) => {
 
 	let currentProvider = PROVIDER;
 	let currentModel = MODEL;
+
+	/** Adapter-advertised reasoning efforts for one exact provider/model route. */
+	const resolveReasoningCatalog = async (provider = currentProvider, model = currentModel) => {
+		const info = await ctx.llm.resolveModelInfo(provider, model);
+		return { info, reasoning: info.reasoning };
+	};
+	/** Reject reasoning ids the current route does not advertise, before any
+	 * provider I/O or settings write. */
+	const validateReasoningEffort = async (effort, provider = currentProvider, model = currentModel) => {
+		const { reasoning } = await resolveReasoningCatalog(provider, model);
+		if (reasoning === void 0) throw new Error(`provider "${provider}" model "${model}" exposes no selectable reasoning effort`);
+		if (!reasoning.efforts.some((entry) => entry.id === effort)) {
+			throw new Error(`unknown reasoning effort "${effort}" for ${provider}/${model} (known: ${reasoning.efforts.map((entry) => entry.id).join(", ")})`);
+		}
+		const resolved = await ctx.llm.resolveCallConfig({ provider, model, reasoningEffort: effort });
+		return resolved.reasoningEffort;
+	};
+	const reasoningCatalogText = async (target, provider = currentProvider, model = currentModel) => {
+		try {
+			const { reasoning } = await resolveReasoningCatalog(provider, model);
+			if (reasoning === void 0) return `provider ${provider} model ${model} exposes no selectable reasoning effort`;
+			const current = activeReasoningFor(target);
+			const efforts = reasoning.efforts.map((entry) => `${entry.id}${entry.id === reasoning.defaultEffort ? " (default)" : ""}${entry.id === current ? " (current)" : ""}`).join(", ");
+			return `reasoning for ${provider}/${model}: ${efforts} — usage: /reasoning [${reasoning.efforts.map((entry) => entry.id).join("|")}|default] [--global]`;
+		} catch (error) {
+			return `[reasoning] ${error.message}`;
+		}
+	};
+	/** Apply a reasoning switch to one live agent and optionally persist the
+	 * new launch default. "default" clears both the session pick and the user
+	 * setting, restoring the provider's own advertised default. */
+	const applyReasoning = async (target, effort, persist) => {
+		const ref = modelSelections.get(target);
+		if (ref === undefined) return { kind: "error", text: "[reasoning] the active session has no model-selection handle" };
+		try {
+			if (effort !== "default") await validateReasoningEffort(effort);
+			if (persist) {
+				if (effort === "default") saveUserConfig({ reasoningEffort: undefined });
+				else saveUserConfig({ reasoningEffort: effort });
+				const loaded = reloadConfig();
+				if (loaded.error) throw loaded.error;
+				currentConfig = loaded.config;
+			}
+			if (effort === "default") {
+				ref.current = { provider: currentProvider, model: currentModel };
+				currentReasoningEffort = persist ? currentConfig.reasoningEffort : undefined;
+			} else {
+				ref.current = { provider: currentProvider, model: currentModel, reasoningEffort: effort };
+				currentReasoningEffort = persist ? currentConfig.reasoningEffort : effort;
+			}
+			return { kind: "success", text: `reasoning: ${effort}${persist ? " (saved as global default)" : ""}` };
+		} catch (error) {
+			return { kind: "error", text: `[reasoning] ${error.message}` };
+		}
+	};
+
 	if (!process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv]) {
 		const hasAnyKey = Object.values(PROVIDER_DEFAULTS).some((def) => process.env[def.keyEnv]);
 		if (hasAnyKey) {
@@ -777,6 +909,16 @@ const boot = async (ctx) => {
 			process.exit(1);
 		},
 	);
+	// Validate an explicitly configured reasoning effort against the exact
+	// model route now, so a typo fails at boot instead of on the first turn.
+	if (currentReasoningEffort !== undefined) {
+		try {
+			currentReasoningEffort = await validateReasoningEffort(currentReasoningEffort);
+		} catch (error) {
+			console.error(`[reasoning] ${error.message}`);
+			process.exit(1);
+		}
+	}
 	if (setupRl) {
 		setupRl.close();
 		setupRl = null;
@@ -835,6 +977,7 @@ const boot = async (ctx) => {
 					new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
 				]);
 				agent = published.agent;
+				installModelSelectionFor(agent, currentProvider, currentModel, currentReasoningEffort);
 				currentMode = foldMode(agent.session.events, LEGACY_FALLBACK_MODE);
 			} catch (err) {
 				console.error("[resume] FAILED:", err?.stack ?? String(err));
@@ -855,6 +998,7 @@ const boot = async (ctx) => {
 					new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
 				]);
 				agent = published.agent;
+				installModelSelectionFor(agent, currentProvider, currentModel, currentReasoningEffort);
 				currentMode = foldMode(agent.session.events, LEGACY_FALLBACK_MODE);
 			} catch (err) {
 				// No persisted "main" yet (or it is unreadable): first run.
@@ -888,16 +1032,18 @@ const boot = async (ctx) => {
 		agent = makeAgent(currentModel, currentProvider);
 	}
 
-	const statusLine = () =>
-		`dsh-mini · ${currentProvider}/${currentModel} · ${currentMode} · ${agent.session.id}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
+	const statusLine = () => {
+		const reasoning = activeReasoningFor(agent);
+		return `dsh-mini · ${currentProvider}/${currentModel} · ${currentMode}${reasoning === undefined ? "" : ` · ${reasoning}`} · ${agent.session.id}${usage ? ` · ↑${usage.inputTokens ?? 0} ↓${usage.outputTokens ?? 0}` : ""}`;
+	};
 
 	if (ui) {
 		ui.setStatus(statusLine());
 	} else {
-		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"}) · mode ${currentMode}`);
+		console.log(`dsh-mini — DSH core + ${currentProvider}/${currentModel} (${PROVIDER_DEFAULTS[currentProvider]?.keyEnv ?? "env key"}) · mode ${currentMode}${currentReasoningEffort === undefined ? "" : ` · reasoning ${currentReasoningEffort}`}`);
 		console.log(`workspace: ${CWD}`);
 		console.log(`session: ${agent.session.id}   (stored in ${SESSIONS_DIR})`);
-		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /config [key [value]]  /sessions  /tools [reload]  /stats  /exit");
+		console.log("commands: /new  /resume [id]  /clear  /model [id]  /provider [id]  /mode [id]  /reasoning [id]  /config [key [value]]  /sessions  /tools [reload]  /stats  /exit");
 		console.log("");
 	}
 
@@ -1020,6 +1166,30 @@ const boot = async (ctx) => {
 				else console.log(`(switched to ${parsed.mode} mode${parsed.global ? ", saved as global default" : ""}, new session: ${agent.session.id})`);
 				return;
 			}
+			if (trimmed === "/reasoning" || trimmed.startsWith("/reasoning ")) {
+				const parsed = parseReasoningArgs(trimmed === "/reasoning" ? "" : trimmed.slice(11).trim());
+				if (parsed.error) {
+					if (ui) ui.addError(parsed.error);
+					else console.error(parsed.error);
+					return;
+				}
+				if (!parsed.effort) {
+					const row = await reasoningCatalogText(agent);
+					if (ui) ui.addToolResult(row, false);
+					else console.log(row);
+					return;
+				}
+				const result = await applyReasoning(agent, parsed.effort, parsed.global);
+				if (result.kind === "error") {
+					if (ui) ui.addError(result.text);
+					else console.error(result.text);
+				} else {
+					if (ui) ui.addToolResult(result.text, false);
+					else console.log(result.text);
+					if (ui) ui.setStatus(statusLine());
+				}
+				return;
+			}
 			if (trimmed === "/resume") {
 				const headers = await ctx.sessionPersistence.list();
 				for (const header of headers) {
@@ -1045,6 +1215,7 @@ const boot = async (ctx) => {
 						new Promise((_, rej) => setTimeout(() => rej(new Error("resume timed out after 10s")), 10000)),
 					]);
 					agent = published.agent;
+					installModelSelectionFor(agent, currentProvider, currentModel, currentReasoningEffort);
 					currentMode = foldMode(agent.session.events, LEGACY_FALLBACK_MODE);
 					if (ui) ui.setStatus(statusLine());
 					else console.log(`(resumed ${id}, ${currentMode} mode)`);

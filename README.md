@@ -81,6 +81,7 @@ dsh-mini
 | `defaultMode` | `minimal` | 新会话模式（`minimal` / `standard`） |
 | `defaultProvider` | 自动 | 启动默认 provider（如 `deepseek-official`、`google`、`openai`） |
 | `defaultModel` | provider 默认 | 启动默认模型 |
+| `reasoningEffort` | provider 默认 | 推理强度（以 `/reasoning` 列出当前模型支持的 id，如 `off`/`high`/`max`；env：`DSH_REASONING_EFFORT`） |
 | `sessionsDir` | `~/.dsh-mini/sessions` | 会话存储目录，支持 `~/...` |
 | `compactionRatio` | `0.8` | 自动压缩触发比例（>0 且 ≤1） |
 | `titles` | `false` | 是否给会话生成标题（静默消耗一次 LLM 调用） |
@@ -88,7 +89,7 @@ dsh-mini
 | `showBanner` | `true` | 是否显示启动 banner |
 | `renderer` | `auto` | `auto`（默认 cc-tui）/ `cc` / `basic` / `plain` |
 
-会话内 `/config` 查看当前有效值及来源；`/config <key> <value>` 写入用户设置。凭据不进 settings —— API key 只从环境变量或 `~/.dsh-mini/env` 读取。
+会话内 `/config` 查看当前有效值及来源；`/config <key> <value>` 写入用户设置。会话内 `/reasoning [id]` 查看/切换推理强度，`/reasoning <id> --global` 把新默认值写进用户设置（`/reasoning default --global` 清除并回到 provider 默认）。凭据不进 settings —— API key 只从环境变量或 `~/.dsh-mini/env` 读取。
 
 ## 自定义工具（toolpackages）
 
@@ -173,24 +174,27 @@ node cli/cli.mjs [model]
   `~/.dsh-mini/settings.json`.
 - Settings: `~/.dsh-mini/settings.json` (user) merged under
   `./.dsh-mini/settings.json` (project), then env vars, then CLI flags.
-  Fields: `defaultMode`, `defaultProvider`, `defaultModel`, `sessionsDir`,
-  `compactionRatio`, `titles`, `workspaceInstructions`, `showBanner`,
-  `renderer`. `/config` shows effective values and `/config <key> <value>`
-  saves to the user file. API keys stay out of settings — they live in the
-  environment or `~/.dsh-mini/env`.
+  Fields: `defaultMode`, `defaultProvider`, `defaultModel`,
+  `reasoningEffort`, `sessionsDir`, `compactionRatio`, `titles`,
+  `workspaceInstructions`, `showBanner`, `renderer`. `/config` shows
+  effective values and `/config <key> <value>` saves to the user file.
+  Reasoning effort is selected per model with `/reasoning [id]`
+  (`/reasoning <id> --global` persists the default); CLI/env defaults are
+  `--reasoning-effort <id>` / `DSH_REASONING_EFFORT`. API keys stay out of
+  settings — they live in the environment or `~/.dsh-mini/env`.
 - Toolpackages: `<cwd>/tools` and `~/.dsh-mini/tools` are scanned for
   `*.tool.json` manifests. Each tool runs out-of-process with JSON on
   stdin/stdout; `/tools reload` re-scans without restarting.
-- REPL: `/clear`, `/model <id>`, `/mode [id [--global]]`, `/config [key [value]]`,
-  `/sessions`, `/tools [reload]`, `/exit`; live event rendering from the
-  session firehose; ANSI status bar with live token usage.
+- REPL: `/clear`, `/model <id>`, `/mode [id [--global]]`, `/reasoning [id [--global]]`,
+  `/config [key [value]]`, `/sessions`, `/tools [reload]`, `/exit`; live event
+  rendering from the session firehose; ANSI status bar with live token usage.
 
 Commands:
 ```sh
 cli/cli-build.sh          # build cli/cli.mjs (Node profile)
 ./run.sh                  # engine conformance (Node + QuickJS, diff vs baseline)
 ./build.sh                # portable engine bundle only
-node cli/cli.mjs [model] [--mode <id>] [--resume <id>] [--sessions]   # settings files + env configure the rest
+node cli/cli.mjs [model] [--mode <id>] [--reasoning-effort <id>] [--resume <id>] [--sessions]   # settings files + env configure the rest
 ```
 
 **Providers.** DeepSeek is the default (`deepseek-official` route via DSH's own
