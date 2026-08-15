@@ -416,7 +416,7 @@ const boot = async (ctx) => {
 		const value = args.slice(1).join(" ").trim();
 		if (value.length === 0) return { kind: "error", text: `${key} requires a value` };
 		try {
-			const saved = persistSetting(key, value);
+			const saved = await persistSetting(key, value);
 			const staticKeys = new Set(["sessionsDir", "compactionRatio", "titles", "workspaceInstructions", "showBanner", "renderer"]);
 			const note = key === "defaultMode"
 				? saved.runtimeApplied
@@ -447,9 +447,12 @@ const boot = async (ctx) => {
 		const selection = {
 			get current() {
 				if (picked !== undefined) return picked;
+				// An explicit CLI reasoning flag outranks even a resumed
+				// session's logged effort; env/settings defaults do not.
+				if (REASONING_OVERRIDE !== undefined) return { provider, model, ...reasoning === void 0 ? {} : { reasoningEffort: reasoning } };
 				const logged = agent.session.requestHeader()?.config;
 				const loggedReasoning = logged?.provider === provider && logged.model === model ? logged.reasoningEffort : void 0;
-				const effort = reasoning ?? loggedReasoning;
+				const effort = loggedReasoning ?? reasoning;
 				return {
 					provider,
 					model,
@@ -641,6 +644,7 @@ const boot = async (ctx) => {
 			const next = (invocation.rawInput ?? "").trim();
 			if (!next) return { kind: "success", text: providersText() };
 			if (!PROVIDER_DEFAULTS[next]) return { kind: "error", text: `unknown provider "${next}" (known: ${Object.keys(PROVIDER_DEFAULTS).join(", ")})` };
+			await reconcileReasoningForRoute(next, PROVIDER_DEFAULTS[next].model);
 			await flushSession(invocation.agent.session);
 			// A provider switch always mints a new session: use the configured
 			// default mode, not the mode of the session we are leaving.
@@ -827,6 +831,18 @@ const boot = async (ctx) => {
 		}
 		const resolved = await ctx.llm.resolveCallConfig({ provider, model, reasoningEffort: effort });
 		return resolved.reasoningEffort;
+	};
+	/** Re-check the current process default when the route changes; drop it
+	 * with a visible warning instead of planting an invalid effort on the new
+	 * model (which would fail only on the first request). */
+	const reconcileReasoningForRoute = async (provider, model) => {
+		if (currentReasoningEffort === undefined) return;
+		try {
+			currentReasoningEffort = await validateReasoningEffort(currentReasoningEffort, provider, model);
+		} catch (error) {
+			console.error(`[reasoning] dropping ${currentReasoningEffort} for ${provider}/${model}: ${error.message}`);
+			currentReasoningEffort = undefined;
+		}
 	};
 	const reasoningCatalogText = async (target, provider = currentProvider, model = currentModel) => {
 		try {
@@ -1076,6 +1092,7 @@ const boot = async (ctx) => {
 					await stopCurrentAgent("user-provider-switch");
 					currentProvider = next;
 					currentModel = PROVIDER_DEFAULTS[next].model;
+					await reconcileReasoningForRoute(currentProvider, currentModel);
 					currentMode = newSessionMode;
 					agent = makeAgent(currentModel, currentProvider);
 					if (ui) ui.setStatus(statusLine());
@@ -1246,6 +1263,7 @@ const boot = async (ctx) => {
 				if (next) {
 					await stopCurrentAgent("user-model-switch");
 					currentModel = next;
+					await reconcileReasoningForRoute(currentProvider, currentModel);
 					currentMode = newSessionMode;
 					agent = makeAgent(next, currentProvider);
 					if (ui) ui.setStatus(statusLine());
