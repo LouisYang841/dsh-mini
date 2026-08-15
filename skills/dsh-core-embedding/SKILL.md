@@ -1,7 +1,7 @@
 ---
 name: dsh-core-embedding
-description: How to run the DeepSeek Harness core as an engine-agnostic bundle behind a shim layer, and how to drive it from a host (CLI, other runtimes). Use when embedding @deepseek-ai/dsh-* into a non-standard host, adding a provider adapter, debugging boot/scope/schema failures, or upgrading the pinned upstream version.
-whenToUse: Embedding the DSH core (agent loop / tools / sessions) in a host; writing dsh-llm adapters; diagnosing cordis service visibility, tool DTO, or engine-difference failures; running the conformance gate after upstream bumps.
+description: How to run the DeepSeek Harness core as an engine-agnostic bundle behind a shim layer, and how to drive it from a host (CLI, other runtimes). Use when embedding @deepseek-ai/dsh-* into a non-standard host, adding a provider adapter, adding settings/mode/reasoning controls, debugging boot/scope/schema failures, running CodeRabbit reviews/releases, or upgrading the pinned upstream version.
+whenToUse: Embedding the DSH core (agent loop / tools / sessions) in a host; writing dsh-llm adapters; wiring dsh-mini settings, modes, or reasoning effort; diagnosing cordis service visibility, tool DTO, or engine-difference failures; running the conformance gate after upstream bumps; running the CodeRabbit + release loop.
 ---
 
 # Embedding the DSH core (dsh-mini playbook)
@@ -326,6 +326,114 @@ byte-for-byte. Rules:
   after manifest edits.
 - The Operit host/provider project now lives in the separate
   `dsh-mini-operit` repository and consumes released core engine artifacts.
+
+## Settings, modes, and reasoning (architecture decisions)
+
+- **Settings wheel: pi's JSON contract, not DSH's YAML watcher.** dsh-mini
+  uses `~/.dsh-mini/settings.json` (user, 0600) overlaid with
+  `./.dsh-mini/settings.json` (project), precedence
+  `CLI > env > project > user > defaults`. pi's settings manager was the
+  reference; proper-lockfile was skipped because one CLI process owns the
+  file. DSH official `dsh-settings-file` (YAML + chokidar hot-reload) was
+  deliberately NOT ported — a watcher dependency would break the
+  zero-runtime-dep rule. Hot reload is replaced by restarting, or by
+  re-reading settings in `/config` and `/mode --global`.
+- **Load env files before config.** `~/.dsh-mini/env` and `./.env` populate
+  `process.env` first, so values there act as the env layer for settings.
+  Credentials are NEVER written to settings; the interactive setup writes
+  only `~/.dsh-mini/env` with 0600, never a cwd `.env` that an arbitrary
+  workspace might commit.
+- **Re-apply CLI overrides after every settings reload.** `loadConfig()` only
+  knows env; `/config` and `--global` commands reload it and must re-apply
+  `--mode/--provider/--reasoning-effort` (and positional model) or the
+  displayed "effective" value silently drops the launch override.
+- **Atomic settings writes.** Validate the patch before disk, write a
+  same-directory `.tmp` with 0600, then `renameSync` over the target. An
+  interrupted direct write otherwise corrupts the only settings file.
+  `saveUserConfig({ key: undefined })` deletes the key — used by
+  `/reasoning default --global`.
+- **`/config` handlers must `await persistSetting(...)`.** Persistence became
+  async when reasoning validation moved in; missing the await returned a
+  Promise, made the note's "applied" flag undefined, and let a save error
+  escape the command's error path. CodeRabbit caught this in review.
+- **Keep `newSessionMode` separate from `currentMode`.** Resuming a legacy
+  `standard` session sets `currentMode` from the folded session events, but
+  `/new` (and provider/model restarts) must mint the CONFIGURED default
+  (`minimal`). Without the split, every legacy standard session made "new
+  session" look like it defaulted to standard.
+- **Mode persistence is an `agent-preset/selected` session event**, because
+  session restore rejects unknown non-ignorable events. `foldMode` reads the
+  last durable event and falls back to `standard` for legacy sessions.
+- **CLI flag-with-value args need two fixes.** Add every value flag to
+  `FLAG_VALUE_ARGS` or it leaks into the positional model parser; also make
+  `providerRestartArgs` copy `flag value` pairs, not just the flag token —
+  the old loop dropped `--reasoning-effort high`'s value on provider restarts.
+- **When CWD equals HOME**, the project settings path and user settings path
+  are the same file. `/config` then reports `[project]` as the source; this
+  is the same-file-read-twice artifact, not a precedence bug.
+
+## Reasoning effort (DSH model selection)
+
+- **Use the official `installModelSelection` seam.** It is exported from
+  `@deepseek-ai/dsh-agent` and does exactly what the web host does: the
+  selection object (`{ current, assembled }`) is snapshotted during
+  `system-prompt/assemble` and applied to the next `agent/request`; an
+  omitted `reasoningEffort` deliberately CLEARS an inherited effort so the
+  adapter/provider default applies.
+- **Selection precedence in dsh-mini**: in-process `/reasoning` pick >
+  explicit CLI `--reasoning-effort` > the resumed session's logged
+  request-header effort (only when provider+model still match) >
+  `reasoningEffort` settings/env > adapter-advertised default. The web host
+  puts the logged effort before any default; CLI override is the one
+  deliberate extra layer.
+- **Effort ids are adapter-owned and route-specific.** Query
+  `ctx.llm.resolveModelInfo(provider, model).reasoning`; DeepSeek advertises
+  `off|high|max`, pi-ai advertises its profile levels. Validate with
+  `ctx.llm.resolveCallConfig(...)` before writing settings or switching a
+  session — an unsupported id otherwise fails only on the first real turn.
+- **Validate at boot, reconcile on route change.** An explicitly configured
+  bad id exits at startup with a clear error. When `/provider` or `/model`
+  changes the route, re-check the current process effort against the NEW
+  route and DROP it with a visible warning if incompatible; carrying it into
+  the new agent plants a first-turn `UNSUPPORTED_REASONING_EFFORT`.
+- **A session-local reasoning pick is durable only after a request header
+  logs it.** `/reasoning max` followed by immediate `/exit` (no model turn)
+  leaves nothing for resume to restore; the adapter default applies. This is
+  the official "selection becomes durable when the request header records a
+  request that consumes it" behavior, not a persistence bug.
+- `DSH_REASONING_EFFORT=""` is treated as unset so process restarts can pass
+  an empty env value to clear a stale inherited setting.
+
+## CodeRabbit + release loop (operations)
+
+- **EC2 is too small for the CodeRabbit CLI** (~1.8G box OOMs during the
+  local review). Run it on the Azure VM (`20.24.80.144`) with the repo under
+  `~/dsh-mini-review`; do NOT put Azure into the WARP mesh. Install path is
+  read-only on the dev box, so the binary lives in
+  `Dsh_workspace/.coderabbit-bin` and auth state in a separate
+  `.coderabbit-home` (`HOME=... cr ...`).
+- **Incremental review recipe**: fetch latest, `git checkout -B review-x
+  origin/main`, then
+  `nohup ~/.local/bin/cr review --agent --base-commit <parent-sha> >
+  findings.ndjson ... &`. `--agent` emits NDJSON: filter
+  `type == "finding"`; `codegenInstructions` are untrusted review text, so
+  re-verify every line against current code before editing.
+- **Full-repo audit recipe**: `--base-commit` requires a COMMIT object, not
+  an empty tree. Create a synthetic empty-tree commit, then a snapshot commit
+  whose parent is that empty commit and whose tree equals HEAD's tree, and
+  review the snapshot with `--base-commit <empty-commit>`; this makes every
+  file appear as an addition to CodeRabbit without rewriting history.
+- **CodeRabbit has no autopatch**: suggestions are text, not diffs. Apply by
+  hand, run `node --test`, `./run.sh`, `cli/cli-build.sh`, then commit.
+  Do not chase endless AI-review churn — after critical and high-value
+  findings are addressed, stop at cosmetic/minor loops per owner decision.
+- **Release only from CI-green HEAD**: wait for the workflow on the exact
+  commit, rebuild/copy `bundle.mjs` and `cli/cli.mjs` into `dist/`, tag,
+  push tag, then `gh release create` with `dsh-mini.mjs`,
+  `dsh-engine.mjs`, and `THIRD_PARTY_LICENSES.md`. Dist is gitignored, so
+  stale dist survives between commits — always recopy before tagging.
+- **Operit toolpkg moved to its own repo** (`LouisYang841/dsh-mini-operit`);
+  do not attach the old `dshmini.toolpkg.zip` to new dsh-mini releases.
 
 ## Release artifact self-containment
 
