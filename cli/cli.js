@@ -8,7 +8,7 @@ import { SessionStore } from "@deepseek-ai/dsh-session";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
-import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { LlmRuntime, LlmAdapter, createUserMessage } from "@deepseek-ai/dsh-llm";
 import * as fsTools from "@deepseek-ai/dsh-tool-fs";
 import * as todoTools from "@deepseek-ai/dsh-tool-todo";
 import * as strReplaceEditorNs from "@deepseek-ai/dsh-tool-str-replace-editor";
@@ -134,6 +134,8 @@ if (!isValidMode(MODE)) {
 const PROVIDER_DEFAULTS = {
 	"deepseek-official": { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
 	google: { model: "gemini-flash-latest", keyEnv: "GEMINI_API_KEY" },
+	// Scripted no-network route for tests/demos, only when explicitly enabled.
+	...(process.env.DSH_FAKE_LLM ? { fake: { model: "fake-reply", keyEnv: "DSH_FAKE_LLM" } } : {}),
 	// pi-ai routes (the pi provider ecosystem): one adapter, many providers
 	deepseek: { model: "deepseek-v4-flash", keyEnv: "DEEPSEEK_API_KEY" },
 	openai: { model: "gpt-4o-mini", keyEnv: "OPENAI_API_KEY" },
@@ -316,6 +318,41 @@ const tuiResumeHostProvider = {
 		installTuiResumeHost(ctx);
 	},
 };
+
+// Fake scripted adapter for tests/demos (DSH_FAKE_LLM=1 + DSH_PROVIDER=fake):
+// same stream contract as the conformance fake, but a full LlmAdapter so it
+// can be registered alongside the real LlmRuntime. No network, no key.
+class FakeAdapter extends LlmAdapter {
+	providerInfo(provider) {
+		return { id: provider, name: "Fake (scripted)" };
+	}
+	// LlmRuntime adapter contract: stream is a method on the adapter that
+	// returns an async iterable of harness-vocabulary chunks.
+	stream() {
+		const chunks = [
+			{ type: "block-start", index: 0, blockType: "text" },
+			{ type: "text-delta", index: 0, text: "(default reply)" },
+			{ type: "block-end", index: 0, block: { type: "text", text: "(default reply)" } },
+			{ type: "finish", reason: { kind: "stop" } },
+		];
+		let i = 0;
+		// Manual async iterator (no async generators: keeps the CLI bundle
+		// portable without relying on generator lowering).
+		return {
+			[Symbol.asyncIterator]() {
+				return {
+					async next() {
+						if (i < chunks.length) return { value: chunks[i++], done: false };
+						return { done: true };
+					},
+				};
+			},
+		};
+	}
+	prepareCall(config) {
+		return { config, stream: (request) => this.stream(request) };
+	}
+}
 
 const boot = async (ctx) => {
 	let currentMode = MODE;
@@ -587,6 +624,7 @@ const boot = async (ctx) => {
 	};
 	if (TTY && CONFIG.showBanner) process.stdout.write(renderBanner());
 	if (GEMINI_KEY) ctx.llm.registerAdapter(["google"], new GeminiAdapter(GEMINI_KEY));
+	if (process.env.DSH_FAKE_LLM) ctx.llm.registerAdapter(["fake"], new FakeAdapter());
 	// /new: available in every renderer. In the community TUI it restarts the
 	// process with a fresh session id; plain mode handles it in handleLine.
 	ctx.commands.register({
@@ -784,7 +822,9 @@ const boot = async (ctx) => {
 		plainRl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: RAW_TTY });
 		plainRl.on("line", queueLine);
 		// Exit on stdin EOF only when idle: a closing pipe must not kill a
-		// turn that is still streaming.
+		// turn that is still streaming, nor drop lines still queued from a
+		// chunk that arrived before the REPL was armed. Record EOF even during
+		// boot so the ask loop exits once it drains the queue.
 		plainRl.on("close", () => {
 			if (lineResolver && setupInputActive) {
 				const reject = lineReject;
@@ -792,9 +832,10 @@ const boot = async (ctx) => {
 				lineReject = null;
 				reject?.(new Error("stdin closed while dsh-mini was waiting for setup input"));
 			}
-			if (!plainInputActive) return;
 			stdinClosed = true;
-			if (!busy) void gracefulExit();
+			// Never exit while input is still queued or a turn is streaming.
+			if (!plainInputActive || busy || lineQueue.length > 0) return;
+			void gracefulExit();
 		});
 	} else {
 		// First-run provider/key setup needs a reader even on a real terminal,
@@ -883,7 +924,8 @@ const boot = async (ctx) => {
 		}
 	};
 
-	if (!process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv]) {
+	const fakeProviderActive = process.env.DSH_FAKE_LLM && currentProvider === "fake";
+	if (!fakeProviderActive && !process.env[PROVIDER_DEFAULTS[currentProvider]?.keyEnv]) {
 		const hasAnyKey = Object.values(PROVIDER_DEFAULTS).some((def) => process.env[def.keyEnv]);
 		if (hasAnyKey) {
 			console.error(`[warn] ${PROVIDER_DEFAULTS[currentProvider].keyEnv} is not set: ${currentProvider} calls will fail with MISSING_CREDENTIAL`);
@@ -1352,6 +1394,11 @@ const boot = async (ctx) => {
 	if (!ui) {
 		const ask = async () => {
 			for (;;) {
+				// EOF + drained queue: nothing left to process, exit cleanly.
+				if (stdinClosed && lineQueue.length === 0) {
+					void gracefulExit();
+					return;
+				}
 				const line = await askUser("you> ");
 				await handleLine(line);
 				process.stdout.write("\n");
