@@ -16,11 +16,18 @@ jobs:
           node-version: 22
       - name: Install deps
         run: npm install
-      - name: Run unit tests
+      - name: Build CLI
+        run: bash cli/cli-build.sh
+      - name: Run unit tests (includes CLI integration)
         run: npm test
       - name: Build portable bundle
         run: bash build.sh
       - name: Run conformance (Node)
         run: bash run.sh
-      - name: Build CLI
-        run: bash cli/cli-build.sh
+      - name: Build QuickJS (pinned release)
+        run: |
+          git clone --depth 1 --branch v0.16.1 https://github.com/quickjs-ng/quickjs.git quickjs-ng
+          make -C quickjs-ng -j2
+          ln -sf build/qjs quickjs-ng/qjs
+      - name: Run conformance (QuickJS cross-check, enforced)
+        run: DSH_REQUIRE_QJS=1 bash run.sh

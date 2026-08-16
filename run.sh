@@ -58,6 +58,9 @@ echo "node vs qjs: DIFFER"
 diff <(python3 -m json.tool trace.node.json) <(python3 -m json.tool trace.qjs.json) | head -30
 exit 1
 fi
+elif [ -n "$DSH_REQUIRE_QJS" ]; then
+echo "qjs: REQUIRED but not found (DSH_REQUIRE_QJS is set)" >&2
+exit 1
 else
 echo "qjs: not built yet (run build in quickjs-ng/)"
 fi
